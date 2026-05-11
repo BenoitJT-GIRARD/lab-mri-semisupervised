@@ -1,0 +1,26 @@
+# Respecter les fins de ligne (LF) sauf pour les scripts Windows.
+* text=auto eol=lf
+
+*.py text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.cfg text eol=lf
+*.ini text eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Notebooks : JSON, traités comme texte mais sans réécriture EOL agressive.
+*.ipynb text eol=lf merge=union
+
+# Binaires.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.zip binary
+*.parquet binary
+*.npy binary

@@ -1,0 +1,89 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.installed.cfg
+*.egg
+pip-wheel-metadata/
+
+# --- uv / virtualenv ---
+.venv/
+venv/
+env/
+.env
+.env.*
+.python-version
+uv.lock.bak
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+*-checkpoint.ipynb
+
+# --- Caches & coverage ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+.hypothesis/
+
+# --- Données & artefacts lourds ---
+data/raw/
+data/interim/
+data/processed/*.parquet
+data/processed/*.npy
+data/processed/*.npz
+data/processed/*.pt
+data/processed/*.pth
+data/processed/*.csv
+data/processed/*.json
+/models/
+*.h5
+*.ckpt
+*.pkl
+*.joblib
+
+# --- Reports : on garde uniquement les livrables finaux ---
+reports/figures/_tmp/
+reports/_build/
+reports/*.zip
+!reports/figures/keep.txt
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Outils Jupyter / Pandoc ---
+*.aux
+*.toc
+*.out
+
+# --- Documentation source fournie ---
+infos/
+
+# --- Sécurité ---
+secrets.toml
+*.pem
+*.key
