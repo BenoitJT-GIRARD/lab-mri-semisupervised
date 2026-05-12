@@ -641,35 +641,24 @@ print("OK — pas de chevauchement entre labels forts et faibles")
         )
     )
 
-    cells.append(md("## 2. Split train / test stratifié sur les labels forts"))
-
-    cells.append(
-        code(
-            """
-train_idx, test_idx = train_test_split(
-    labeled_df.index,
-    test_size=TrainingConfig().test_size,
-    stratify=labeled_df["label_index"],
-    random_state=SEED,
-)
-strong_train = labeled_df.loc[train_idx]
-strong_test = labeled_df.loc[test_idx]
-
-print(f"strong_train : {len(strong_train)} ({strong_train['label_name'].value_counts().to_dict()})")
-print(f"strong_test  : {len(strong_test)} ({strong_test['label_name'].value_counts().to_dict()})")
-print(f"weak (faibles): {len(weak)} ({weak['weak_label_name'].value_counts().to_dict()})")
-"""
-        )
-    )
-
-    cells.append(md("## 3. Stratégie A — Baseline supervisée pure"))
+    cells.append(md("## 2. Évaluation 5-fold stratifiée"))
 
     cells.append(
         md(
             """
-On entraîne un ResNet18 pré-entraîné ImageNet, dont on remplace la tête par
-une couche linéaire 2 classes. Le réseau est ré-entraîné de bout en bout sur
-les 80 images du train fortement labellisé.
+Avec seulement 100 IRM fortement labellisées, un unique split train/test laisse
+trop de variance d'estimation. On préfère une **5-fold stratifiée** : à chaque
+fold, 50 IRM sont en train et 50 en test (jamais vues), avec ratio 1:1 cancer
+/ normal préservé. Les deux stratégies (sup. pur, semi-sup.) sont évaluées sur
+les **mêmes folds**, mêmes hyperparamètres, mêmes graines.
+
+Pourquoi 50/50 plutôt que 80/20 ?
+
+* Garder un test set substantiel (50 IRM) réduit la variance d'estimation.
+* Avec 80/20, ResNet18 pré-entraîné ImageNet sature trop vite (perfect score
+  sur 20 IRM) ; la comparaison perd en pouvoir discriminant.
+* Le total `5 folds × 50 test = 250 prédictions` (avec *overlap*) reste
+  pragmatique pour une mission exploratoire de R&D.
 """
         )
     )
@@ -677,36 +666,35 @@ les 80 images du train fortement labellisé.
     cells.append(
         code(
             """
-from curelyticsia.models.semi_supervised import train_supervised
+from curelyticsia.models.semi_supervised import (
+    aggregate_reports,
+    cross_validate,
+    train_semi_supervised,
+    train_supervised,
+)
 
 cfg = TrainingConfig()
-print(cfg)
+print("Hyperparamètres :", cfg)
 
-sup_model, sup_report = train_supervised(
-    train_paths=strong_train["path"].tolist(),
-    train_labels=strong_train["label_index"].tolist(),
-    test_paths=strong_test["path"].tolist(),
-    test_labels=strong_test["label_index"].tolist(),
-    class_names=list(CLASSES),
-    cfg=cfg,
-)
-print(json.dumps(
-    {k: v for k, v in sup_report.__dict__.items() if k not in ("history",)},
-    indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o,
-))
+print(f"\\nStrong : {len(labeled_df)} | Weak : {len(weak)} | Folds : {cfg.cv_folds}")
 """
         )
     )
 
-    cells.append(md("## 4. Stratégie B — Semi-supervisé (faible → fort)"))
+    cells.append(md("## 3. Lancement de la cross-validation"))
 
     cells.append(
         md(
             """
-Le réseau démarre avec les mêmes poids ImageNet, est **pré-entraîné** sur les
-~1 400 pseudo-labels (apprentissage de structures visuelles communes via les
-clusters identifiés à l'étape 3), puis **fine-tuné** sur les 80 images du
-train fortement labellisé avec un *learning rate* divisé par deux.
+Chaque fold lance :
+
+1. **Stratégie A — supervisée pure** : ResNet18 pré-entraîné ImageNet,
+   ré-entraîné de bout en bout sur 50 IRM fortement labellisées.
+2. **Stratégie B — semi-supervisée** : même architecture, **pré-entraînée**
+   sur les ~1 400 pseudo-labels faibles puis **fine-tunée** sur les mêmes 50
+   IRM avec un *learning rate* divisé par deux.
+
+Les deux stratégies sont évaluées sur les **mêmes** 50 IRM jamais vues.
 """
         )
     )
@@ -714,44 +702,41 @@ train fortement labellisé avec un *learning rate* divisé par deux.
     cells.append(
         code(
             """
-from curelyticsia.models.semi_supervised import train_semi_supervised
-
-semi_model, semi_report = train_semi_supervised(
+reports = cross_validate(
+    strong_paths=labeled_df["path"].tolist(),
+    strong_labels=labeled_df["label_index"].tolist(),
     weak_paths=weak["path"].tolist(),
     weak_labels=weak["weak_label_index"].astype(int).tolist(),
-    strong_train_paths=strong_train["path"].tolist(),
-    strong_train_labels=strong_train["label_index"].tolist(),
-    strong_test_paths=strong_test["path"].tolist(),
-    strong_test_labels=strong_test["label_index"].tolist(),
     class_names=list(CLASSES),
     cfg=cfg,
+    seed=SEED,
 )
-print(json.dumps(
-    {k: v for k, v in semi_report.__dict__.items() if k not in ("history",)},
-    indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o,
-))
+
+agg_sup = aggregate_reports(reports["supervised"])
+agg_semi = aggregate_reports(reports["semi_supervised"])
 """
         )
     )
 
-    cells.append(md("## 5. Comparaison des deux stratégies"))
+    cells.append(md("## 4. Comparaison des deux stratégies"))
 
     cells.append(
         code(
             """
-def to_run(report) -> dict[str, float]:
-    return {
-        "accuracy": report.accuracy,
-        "f1_macro": report.f1_macro,
-        "recall_cancer": report.recall_per_class.get("cancer", float("nan")),
-        "precision_cancer": report.precision_per_class.get("cancer", float("nan")),
-        "f1_cancer": report.f1_per_class.get("cancer", float("nan")),
-        "roc_auc": report.roc_auc if report.roc_auc is not None else float("nan"),
-    }
+def to_summary(agg: dict[str, dict[str, float]]) -> dict[str, str]:
+    out = {}
+    for metric, vals in agg.items():
+        if vals["std"] > 1e-6:
+            out[metric] = f"{vals['mean']:.3f} ± {vals['std']:.3f}"
+        else:
+            out[metric] = f"{vals['mean']:.3f}"
+    return out
 
-runs = {"Supervisé pur": to_run(sup_report), "Semi-supervisé": to_run(semi_report)}
-comparison = pd.DataFrame(runs).T
-comparison.style.format("{:.3f}")
+comparison = pd.DataFrame({
+    "Supervisé pur": to_summary(agg_sup),
+    "Semi-supervisé": to_summary(agg_semi),
+})
+comparison
 """
         )
     )
@@ -759,44 +744,54 @@ comparison.style.format("{:.3f}")
     cells.append(
         code(
             """
+runs = {
+    "Supervisé pur": {k: v["mean"] for k, v in agg_sup.items()},
+    "Semi-supervisé": {k: v["mean"] for k, v in agg_semi.items()},
+}
 _ = plot_metrics_bar(
     runs,
     metric_name="f1_macro",
-    title="Macro-F1 — Supervisé vs Semi-supervisé",
+    title="Macro-F1 — Supervisé vs Semi-supervisé (CV mean)",
     save_path=FIGURES_DIR / "compare_f1.png",
 )
 _ = plot_metrics_bar(
     runs,
     metric_name="recall_cancer",
-    title="Rappel sur la classe cancer (priorité métier)",
+    title="Rappel sur la classe cancer (priorité métier, CV mean)",
     save_path=FIGURES_DIR / "compare_recall_cancer.png",
 )
 """
         )
     )
 
-    cells.append(md("### 5.1 Matrices de confusion"))
+    cells.append(md("### 4.1 Matrices de confusion (somme sur les 5 folds)"))
 
     cells.append(
         code(
             """
+def stack_cm(reports_list):
+    return np.sum([np.array(r.confusion_matrix) for r in reports_list], axis=0).tolist()
+
+cm_sup = stack_cm(reports["supervised"])
+cm_semi = stack_cm(reports["semi_supervised"])
+
 _ = plot_confusion_matrix(
-    sup_report.confusion_matrix,
+    cm_sup,
     class_names=list(CLASSES),
-    title="Confusion — Supervisé pur",
+    title="Confusion (cumul 5 folds) — Supervisé pur",
     save_path=FIGURES_DIR / "cm_supervised.png",
 )
 _ = plot_confusion_matrix(
-    semi_report.confusion_matrix,
+    cm_semi,
     class_names=list(CLASSES),
-    title="Confusion — Semi-supervisé",
+    title="Confusion (cumul 5 folds) — Semi-supervisé",
     save_path=FIGURES_DIR / "cm_semi.png",
 )
 """
         )
     )
 
-    cells.append(md("### 5.2 Historique des phases d'entraînement"))
+    cells.append(md("### 4.2 Historique d'entraînement (un fold représentatif)"))
 
     cells.append(
         code(
@@ -813,8 +808,8 @@ def history_to_df(report, label: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 hist_df = pd.concat([
-    history_to_df(sup_report, "supervised"),
-    history_to_df(semi_report, "semi-supervised"),
+    history_to_df(reports["supervised"][0], "supervised"),
+    history_to_df(reports["semi_supervised"][0], "semi-supervised"),
 ], ignore_index=True)
 
 _ = plot_history(hist_df, save_path=FIGURES_DIR / "training_history.png")

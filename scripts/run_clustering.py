@@ -69,7 +69,7 @@ def main() -> None:
     aligned = align_cluster_labels(best.labels, truth)
     weak = assign_weak_labels(index_df, aligned)
     out = export_weak_labels(weak, ClusteringConfig())
-    print(f"[ok] {len(weak)} pseudo-labels exportés → {out}")
+    print(f"[ok] {len(weak)} pseudo-labels exportes -> {out}")
 
     pd.DataFrame(report).to_csv(
         ClusteringConfig().weak_labels_path.parent / "clustering_report.csv", index=False

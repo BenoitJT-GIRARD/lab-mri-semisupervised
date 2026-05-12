@@ -295,11 +295,107 @@ def train_semi_supervised(
     return model, report
 
 
+def cross_validate(
+    strong_paths: list[str | Path],
+    strong_labels: list[int],
+    weak_paths: list[str | Path] | None,
+    weak_labels: list[int] | None,
+    class_names: list[str],
+    cfg: TrainingConfig | None = None,
+    seed: int = 42,
+) -> dict[str, list[EvalReport]]:
+    """Évaluation 5-fold stratifiée des deux stratégies sur les labels forts.
+
+    À chaque fold, le test set est composé d'IRM fortement labellisées **jamais
+    vues** ; le train set est utilisé tel quel pour la baseline supervisée et,
+    augmenté des pseudo-labels faibles, pour la stratégie semi-supervisée.
+
+    Returns
+    -------
+    dict
+        ``{"supervised": [EvalReport, ...], "semi_supervised": [...]}``
+    """
+    from sklearn.model_selection import StratifiedKFold
+
+    cfg = cfg or TrainingConfig()
+    skf = StratifiedKFold(n_splits=cfg.cv_folds, shuffle=True, random_state=seed)
+    paths_arr = np.asarray(strong_paths, dtype=object)
+    labels_arr = np.asarray(strong_labels, dtype=int)
+
+    reports_sup: list[EvalReport] = []
+    reports_semi: list[EvalReport] = []
+    for fold, (train_idx, test_idx) in enumerate(skf.split(paths_arr, labels_arr), start=1):
+        s_train_paths = paths_arr[train_idx].tolist()
+        s_train_labels = labels_arr[train_idx].tolist()
+        s_test_paths = paths_arr[test_idx].tolist()
+        s_test_labels = labels_arr[test_idx].tolist()
+
+        _, sup_report = train_supervised(
+            train_paths=s_train_paths,
+            train_labels=s_train_labels,
+            test_paths=s_test_paths,
+            test_labels=s_test_labels,
+            class_names=class_names,
+            cfg=cfg,
+        )
+        reports_sup.append(sup_report)
+
+        if weak_paths is not None and weak_labels is not None:
+            _, semi_report = train_semi_supervised(
+                weak_paths=list(weak_paths),
+                weak_labels=list(weak_labels),
+                strong_train_paths=s_train_paths,
+                strong_train_labels=s_train_labels,
+                strong_test_paths=s_test_paths,
+                strong_test_labels=s_test_labels,
+                class_names=class_names,
+                cfg=cfg,
+            )
+            reports_semi.append(semi_report)
+
+        print(
+            f"  fold {fold}/{cfg.cv_folds} | sup acc={sup_report.accuracy:.3f} f1={sup_report.f1_macro:.3f}"
+            + (
+                f" | semi acc={reports_semi[-1].accuracy:.3f} f1={reports_semi[-1].f1_macro:.3f}"
+                if reports_semi
+                else ""
+            ),
+            flush=True,
+        )
+
+    return {"supervised": reports_sup, "semi_supervised": reports_semi}
+
+
+def aggregate_reports(reports: list[EvalReport]) -> dict[str, dict[str, float]]:
+    """Renvoie ``{metric: {"mean": ..., "std": ..., "values": [...]}}``."""
+    if not reports:
+        return {}
+    metrics: dict[str, list[float]] = {
+        "accuracy": [r.accuracy for r in reports],
+        "f1_macro": [r.f1_macro for r in reports],
+        "recall_cancer": [r.recall_per_class.get("cancer", float("nan")) for r in reports],
+        "precision_cancer": [r.precision_per_class.get("cancer", float("nan")) for r in reports],
+        "f1_cancer": [r.f1_per_class.get("cancer", float("nan")) for r in reports],
+    }
+    if all(r.roc_auc is not None for r in reports):
+        metrics["roc_auc"] = [r.roc_auc for r in reports]  # type: ignore[misc]
+    return {
+        name: {
+            "mean": float(np.mean(values)),
+            "std": float(np.std(values, ddof=0)),
+            "values": [float(v) for v in values],
+        }
+        for name, values in metrics.items()
+    }
+
+
 __all__ = [
     "EvalReport",
     "EpochLog",
     "TrainingConfig",
+    "aggregate_reports",
     "build_classifier",
+    "cross_validate",
     "evaluate",
     "make_loader",
     "train_semi_supervised",

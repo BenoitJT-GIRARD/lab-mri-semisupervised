@@ -24,7 +24,7 @@ def main() -> None:
 
     cfg = FeatureConfig()
     feats, index_df = extract_features(records, cfg=cfg, use_cache=True)
-    print(f"[ok] features shape={feats.shape} → {cfg.cache_path}")
+    print(f"[ok] features shape={feats.shape} -> {cfg.cache_path}")
     print(index_df["split"].value_counts().to_string())
 
 
