@@ -8,9 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from curelyticsia.config import FeatureConfig, ensure_dirs, set_global_seeds  # noqa: E402
-from curelyticsia.data.loader import discover_images  # noqa: E402
-from curelyticsia.features.extractor import extract_features  # noqa: E402
+from curelyticsia.config import FeatureConfig, ensure_dirs, set_global_seeds
+from curelyticsia.data.loader import discover_images
+from curelyticsia.features.extractor import extract_features
 
 
 def main() -> None:

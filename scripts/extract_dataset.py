@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from curelyticsia.config import DATASET_ROOT, DATASET_ZIP, RAW_DIR  # noqa: E402
+from curelyticsia.config import DATASET_ROOT, DATASET_ZIP, RAW_DIR
 
 
 def main() -> None:

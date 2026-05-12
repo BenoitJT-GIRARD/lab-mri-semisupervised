@@ -818,7 +818,7 @@ hist_df.tail(10)
         )
     )
 
-    cells.append(md("## 6. Discussion : justification de l'approche semi-supervisée"))
+    cells.append(md("## 5. Discussion : justification de l'approche semi-supervisée"))
 
     cells.append(
         md(
@@ -852,14 +852,16 @@ plutôt que l'accuracy globale qui peut masquer un déséquilibre de classes.
         )
     )
 
-    cells.append(md("## 7. Bonus — Comparaison avec sklearn `LabelPropagation`"))
+    cells.append(md("## 6. Bonus — Comparaison avec sklearn `LabelPropagation`"))
 
     cells.append(
         md(
             """
 La consigne suggère également les méthodes basées sur les graphes
 (*label propagation*). On s'en sert ici comme **second avis** sur les features
-ResNet déjà extraites — sans avoir à réentraîner un CNN.
+ResNet déjà extraites — sans avoir à réentraîner un CNN. On évalue
+LabelPropagation par 5-fold stratifiée pour comparer ses scores aux deux
+stratégies CNN précédentes.
 """
         )
     )
@@ -867,43 +869,55 @@ ResNet déjà extraites — sans avoir à réentraîner un CNN.
     cells.append(
         code(
             """
+from sklearn.metrics import accuracy_score, f1_score, recall_score
+from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.semi_supervised import LabelPropagation
 
-# On reconstruit truth aligné sur l'ordre de features.
-truth_full = np.full(len(features), -1, dtype=int)
-for idx, row in labeled_df.iterrows():
-    pos = int(np.where(index_df["image_id"].values == row["image_id"])[0][0])
-    truth_full[pos] = int(row["label_index"])
-
-# On ne fournit à LabelPropagation que les labels du **train fort** + les
-# features ; le test reste donc inconnu — comparaison honnête.
-train_ids = set(strong_train["image_id"].tolist())
-test_ids = set(strong_test["image_id"].tolist())
-
-semi_truth = np.where(
-    [iid in train_ids for iid in index_df["image_id"]],
-    truth_full,
-    -1,
-)
-
 X = StandardScaler().fit_transform(features)
-lp = LabelPropagation(kernel="knn", n_neighbors=10, max_iter=200)
-lp.fit(X, semi_truth)
+labeled_mask = (index_df["split"] == "labeled").to_numpy()
+labeled_idx = np.where(labeled_mask)[0]
+strong_labels_full = labeled_df.loc[labeled_idx, "label_index"].values
 
-# Évaluation sur le test set fortement labellisé.
-test_mask = np.array([iid in test_ids for iid in index_df["image_id"]])
-y_true_test = truth_full[test_mask]
-y_pred_test = lp.transduction_[test_mask]
-from sklearn.metrics import accuracy_score, f1_score, recall_score
-print("LabelPropagation — accuracy   :", accuracy_score(y_true_test, y_pred_test))
-print("LabelPropagation — macro F1   :", f1_score(y_true_test, y_pred_test, average="macro"))
-print("LabelPropagation — recall cancer :", recall_score(y_true_test, y_pred_test, pos_label=CLASS_TO_INDEX["cancer"]))
+skf = StratifiedKFold(n_splits=cfg.cv_folds, shuffle=True, random_state=SEED)
+lp_acc, lp_f1, lp_recall = [], [], []
+for _fold, (train_pos, test_pos) in enumerate(
+    skf.split(np.zeros_like(strong_labels_full), strong_labels_full),
+    start=1,
+):
+    train_ids = labeled_idx[train_pos]
+    test_ids = labeled_idx[test_pos]
+    semi_truth = np.full(len(X), -1, dtype=int)
+    semi_truth[train_ids] = strong_labels_full[train_pos]
+    lp = LabelPropagation(kernel="knn", n_neighbors=10, max_iter=200)
+    lp.fit(X, semi_truth)
+    y_true = strong_labels_full[test_pos]
+    y_pred = lp.transduction_[test_ids]
+    lp_acc.append(accuracy_score(y_true, y_pred))
+    lp_f1.append(f1_score(y_true, y_pred, average="macro"))
+    lp_recall.append(
+        recall_score(y_true, y_pred, pos_label=CLASS_TO_INDEX["cancer"], zero_division=0)
+    )
+
+print(f"LabelPropagation accuracy        : {np.mean(lp_acc):.3f} ± {np.std(lp_acc):.3f}")
+print(f"LabelPropagation macro F1        : {np.mean(lp_f1):.3f} ± {np.std(lp_f1):.3f}")
+print(f"LabelPropagation recall cancer   : {np.mean(lp_recall):.3f} ± {np.std(lp_recall):.3f}")
 """
         )
     )
 
-    cells.append(md("## 8. *Definition of Done*"))
+    cells.append(
+        md(
+            """
+**Lecture** : LabelPropagation, basé sur un graphe k-NN sur les features
+ResNet, est très peu coûteux (pas de fine-tuning) et constitue une **baseline
+légère** pertinente pour des budgets contraints. Le CNN semi-supervisé reste
+généralement plus précis car il ré-apprend les couches du backbone.
+"""
+        )
+    )
+
+    cells.append(md("## 7. *Definition of Done*"))
 
     cells.append(
         code(
@@ -911,8 +925,16 @@ print("LabelPropagation — recall cancer :", recall_score(y_true_test, y_pred_t
 done_table = pd.DataFrame(
     [
         ("ARI clustering vs labels forts ≥ 0.10", "voir notebook 01"),
-        ("F1 macro semi-sup ≥ F1 macro supervisé", f"{semi_report.f1_macro:.3f} vs {sup_report.f1_macro:.3f}"),
-        ("Recall cancer ≥ 0.90", f"sup={sup_report.recall_per_class.get('cancer', float('nan')):.3f} ; semi={semi_report.recall_per_class.get('cancer', float('nan')):.3f}"),
+        (
+            "F1 macro semi-sup ≥ F1 macro supervisé",
+            f"semi={agg_semi['f1_macro']['mean']:.3f} ± {agg_semi['f1_macro']['std']:.3f}"
+            f" ; sup={agg_sup['f1_macro']['mean']:.3f} ± {agg_sup['f1_macro']['std']:.3f}",
+        ),
+        (
+            "Recall cancer ≥ 0.90",
+            f"semi={agg_semi['recall_cancer']['mean']:.3f} ± {agg_semi['recall_cancer']['std']:.3f}"
+            f" ; sup={agg_sup['recall_cancer']['mean']:.3f} ± {agg_sup['recall_cancer']['std']:.3f}",
+        ),
         ("Tests pytest verts", "voir QA"),
         ("Notebooks ré-exécutables", "uv run jupyter nbconvert --execute"),
     ],
@@ -928,12 +950,15 @@ done_table
             """
 # Sauvegarde du rapport JSON consommé par le support de présentation.
 out = {
-    "supervised": to_run(sup_report),
-    "semi_supervised": to_run(semi_report),
-    "training_config": cfg.__dict__,
+    "supervised": agg_sup,
+    "semi_supervised": agg_semi,
+    "training_config": dict(cfg.__dict__),
 }
 out_path = PROCESSED_DIR / "training_report.json"
-out_path.write_text(json.dumps(out, indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o), encoding="utf-8")
+out_path.write_text(
+    json.dumps(out, indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o),
+    encoding="utf-8",
+)
 print(f"Rapport sauvegardé : {out_path}")
 """
         )

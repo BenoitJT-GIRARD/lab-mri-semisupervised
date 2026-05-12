@@ -390,8 +390,8 @@ def aggregate_reports(reports: list[EvalReport]) -> dict[str, dict[str, float]]:
 
 
 __all__ = [
-    "EvalReport",
     "EpochLog",
+    "EvalReport",
     "TrainingConfig",
     "aggregate_reports",
     "build_classifier",
