@@ -33,20 +33,13 @@ def build_backbone(name: str = "resnet50", pretrained: bool = True) -> tuple[nn.
     if name_lower == "resnet50":
         weights = models.ResNet50_Weights.IMAGENET1K_V2 if pretrained else None
         net = models.resnet50(weights=weights)
-        feature_dim = net.fc.in_features
-        net.fc = nn.Identity()
     elif name_lower == "resnet18":
         weights = models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
         net = models.resnet18(weights=weights)
-        feature_dim = net.fc.in_features
-        net.fc = nn.Identity()
-    elif name_lower == "efficientnet_b0":
-        weights = models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None
-        net = models.efficientnet_b0(weights=weights)
-        feature_dim = net.classifier[1].in_features
-        net.classifier = nn.Identity()
     else:
         raise ValueError(f"Backbone non supporté : {name}")
+    feature_dim = net.fc.in_features
+    net.fc = nn.Identity()
 
     for p in net.parameters():
         p.requires_grad_(False)
