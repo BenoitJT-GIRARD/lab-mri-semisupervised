@@ -73,13 +73,14 @@ class TrainingConfig:
     num_classes: int = 2
     image_size: int = INPUT_SIZE
     batch_size: int = 16
-    epochs_weak: int = 5
-    epochs_strong: int = 8
+    epochs_weak: int = 3
+    epochs_strong: int = 6
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
-    test_size: float = 0.2
+    test_size: float = 0.5  # 50/50 sur les 100 IRM fortement labellisees
     val_size: float = 0.0
     early_stopping_patience: int = 4
+    cv_folds: int = 5
 
 
 def ensure_dirs() -> None:

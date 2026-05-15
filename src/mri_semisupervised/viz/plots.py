@@ -104,29 +104,53 @@ def project_2d(
     raise ValueError(f"Méthode 2D inconnue : {method}")
 
 
+def _normalise_label(value: object) -> str:
+    if value is None:
+        return "unlabeled"
+    try:
+        if isinstance(value, float) and pd.isna(value):
+            return "unlabeled"
+    except TypeError:
+        pass
+    text = str(value).strip()
+    if text == "" or text.lower() == "nan":
+        return "unlabeled"
+    return text
+
+
 def plot_2d_scatter(
     coords: np.ndarray,
     labels: Iterable[str | int | None],
     title: str,
     save_path: Path | None = None,
 ) -> plt.Figure:
-    """Nuage 2D coloré par label (catégoriel)."""
-    df = pd.DataFrame(
-        {
-            "x": coords[:, 0],
-            "y": coords[:, 1],
-            "label": ["unlabeled" if v is None else str(v) for v in labels],
-        }
-    )
+    """Nuage 2D coloré par label (catégoriel).
+
+    Robuste aux ``None``, ``NaN``, chaînes vides : tout devient « unlabeled ».
+    Les couleurs hors palette de référence sont laissées au choix de Seaborn.
+    """
+    cleaned = [_normalise_label(v) for v in labels]
+    df = pd.DataFrame({"x": coords[:, 0], "y": coords[:, 1], "label": cleaned})
+
+    reference = {
+        "unlabeled": "#bdbdbd",
+        "normal": "#2ca25f",
+        "cancer": "#de2d26",
+        "noise": "#444444",
+        "0": "#1f77b4",
+        "1": "#d62728",
+    }
+    palette = {k: reference[k] for k in df["label"].unique() if k in reference}
+    if not palette:
+        palette = None
+
     fig, ax = plt.subplots(figsize=(7.5, 6))
-    palette = {"unlabeled": "#bdbdbd", "normal": "#2ca25f", "cancer": "#de2d26", "0": "#1f77b4", "1": "#d62728"}
     sns.scatterplot(
         data=df,
         x="x",
         y="y",
         hue="label",
-        palette={k: palette.get(k, None) for k in df["label"].unique() if palette.get(k) is not None}
-        or None,
+        palette=palette,
         s=18,
         alpha=0.75,
         ax=ax,

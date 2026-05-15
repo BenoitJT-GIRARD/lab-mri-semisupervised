@@ -11,15 +11,15 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from curelyticsia.config import (  # noqa: E402
+from curelyticsia.config import (
     CLASS_TO_INDEX,
     ClusteringConfig,
     FeatureConfig,
     ensure_dirs,
     set_global_seeds,
 )
-from curelyticsia.features.extractor import load_cached_features  # noqa: E402
-from curelyticsia.models.clustering import (  # noqa: E402
+from curelyticsia.features.extractor import load_cached_features
+from curelyticsia.models.clustering import (
     align_cluster_labels,
     assign_weak_labels,
     build_clustering_report,
@@ -69,7 +69,7 @@ def main() -> None:
     aligned = align_cluster_labels(best.labels, truth)
     weak = assign_weak_labels(index_df, aligned)
     out = export_weak_labels(weak, ClusteringConfig())
-    print(f"[ok] {len(weak)} pseudo-labels exportés → {out}")
+    print(f"[ok] {len(weak)} pseudo-labels exportes -> {out}")
 
     pd.DataFrame(report).to_csv(
         ClusteringConfig().weak_labels_path.parent / "clustering_report.csv", index=False

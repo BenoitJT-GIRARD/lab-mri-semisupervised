@@ -1,34 +1,36 @@
-"""Entraîne et compare la baseline supervisée et l'approche semi-supervisée."""
+"""Entraîne et compare la baseline supervisée et l'approche semi-supervisée.
+
+Évaluation en 5-fold stratifiée sur les labels forts pour une comparaison
+robuste (les deux modèles vus sur les mêmes folds, mêmes hyperparamètres).
+"""
 
 from __future__ import annotations
 
 import json
 import sys
-from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from curelyticsia.config import (  # noqa: E402
-    CLASSES,
+from curelyticsia.config import (
     CLASS_TO_INDEX,
-    ClusteringConfig,
-    FeatureConfig,
+    CLASSES,
     PROCESSED_DIR,
     SEED,
+    ClusteringConfig,
+    FeatureConfig,
     TrainingConfig,
     ensure_dirs,
     set_global_seeds,
 )
-from curelyticsia.features.extractor import load_cached_features  # noqa: E402
-from curelyticsia.models.semi_supervised import (  # noqa: E402
-    train_semi_supervised,
-    train_supervised,
+from curelyticsia.features.extractor import load_cached_features
+from curelyticsia.models.semi_supervised import (
+    aggregate_reports,
+    cross_validate,
 )
 
 
@@ -50,49 +52,39 @@ def main() -> None:
     labeled = index_df[index_df["split"] == "labeled"].copy()
     labeled["label_index"] = labeled["label_name"].map(CLASS_TO_INDEX).astype(int)
 
-    train_idx, test_idx = train_test_split(
-        labeled.index,
-        test_size=0.2,
-        stratify=labeled["label_index"],
-        random_state=SEED,
-    )
-    strong_train = labeled.loc[train_idx]
-    strong_test = labeled.loc[test_idx]
-
     cfg = TrainingConfig()
+    print(f"[run] Cross-validation {cfg.cv_folds}-fold stratifiee")
+    print(f"      strong n={len(labeled)} ; weak n={len(weak)}")
 
-    print(f"[run] Supervised baseline (train={len(strong_train)}, test={len(strong_test)})")
-    _, sup_report = train_supervised(
-        train_paths=strong_train["path"].tolist(),
-        train_labels=strong_train["label_index"].astype(int).tolist(),
-        test_paths=strong_test["path"].tolist(),
-        test_labels=strong_test["label_index"].astype(int).tolist(),
-        class_names=list(CLASSES),
-        cfg=cfg,
-    )
-
-    print(
-        f"[run] Semi-supervised (weak={len(weak)}, train={len(strong_train)}, test={len(strong_test)})"
-    )
-    _, semi_report = train_semi_supervised(
+    reports = cross_validate(
+        strong_paths=labeled["path"].tolist(),
+        strong_labels=labeled["label_index"].tolist(),
         weak_paths=weak["path"].tolist(),
         weak_labels=weak["weak_label_index"].astype(int).tolist(),
-        strong_train_paths=strong_train["path"].tolist(),
-        strong_train_labels=strong_train["label_index"].astype(int).tolist(),
-        strong_test_paths=strong_test["path"].tolist(),
-        strong_test_labels=strong_test["label_index"].astype(int).tolist(),
         class_names=list(CLASSES),
         cfg=cfg,
+        seed=SEED,
     )
 
     out = {
-        "supervised": {k: v for k, v in asdict(sup_report).items() if k != "history"},
-        "semi_supervised": {k: v for k, v in asdict(semi_report).items() if k != "history"},
+        "supervised": aggregate_reports(reports["supervised"]),
+        "semi_supervised": aggregate_reports(reports["semi_supervised"]),
+        "training_config": {
+            k: (str(v) if hasattr(v, "__fspath__") else v) for k, v in cfg.__dict__.items()
+        },
     }
+
     out_path = PROCESSED_DIR / "training_report.json"
-    out_path.write_text(json.dumps(out, indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o), encoding="utf-8")
-    print(f"[ok] Rapport sauvegardé : {out_path}")
-    print(json.dumps(out, indent=2))
+    out_path.write_text(
+        json.dumps(out, indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o),
+        encoding="utf-8",
+    )
+    print(f"[ok] Rapport sauvegarde : {out_path}")
+    for strategy in ("supervised", "semi_supervised"):
+        for metric in ("accuracy", "f1_macro", "recall_cancer", "f1_cancer"):
+            vals = out[strategy].get(metric)
+            if vals:
+                print(f"  {strategy:18s} {metric:18s} mean={vals['mean']:.3f} ± {vals['std']:.3f}")
 
 
 if __name__ == "__main__":
