@@ -66,6 +66,7 @@ data/processed/*.json
 *.joblib
 
 # --- Reports : on garde uniquement les livrables finaux ---
+reports/Labellisez_images_semisup_*/
 reports/figures/_tmp/
 reports/_build/
 reports/*.zip
@@ -79,6 +80,9 @@ logs/
 *.aux
 *.toc
 *.out
+
+# --- Outils de l'éditeur ---
+.claude/
 
 # --- Documentation source fournie ---
 infos/

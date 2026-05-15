@@ -39,6 +39,7 @@ dev = [
     "jupyter>=1.0",
     "nbformat>=5.10",
     "nbconvert>=7.16",
+    "pre-commit>=3.7",
 ]
 
 [build-system]
@@ -47,6 +48,22 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/curelyticsia"]
+
+# --- PyTorch CUDA 12.6 builds (override default PyPI for torch / torchvision) ---
+#
+# Le projet est entraîné sur GPU NVIDIA. uv résout torch et torchvision depuis
+# l'index officiel PyTorch ; tomber sur les wheels +cpu détruirait les
+# performances et n'utiliserait pas la RTX. Si vous compilez sur une machine
+# sans GPU, retirez ces deux blocs.
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126" }]
+torchvision = [{ index = "pytorch-cu126" }]
 
 [tool.ruff]
 line-length = 100
@@ -68,12 +85,20 @@ select = [
 ignore = [
     "PLR0913",  # too many arguments — common in DL/training APIs
     "PLR2004",  # magic numbers — frequent in image dims, hyperparams
+    "PLR0915",  # too many statements — pipeline functions can be long
+    "PLR0912",  # too many branches — clustering selection has many cases
     "E501",     # long lines (handled by formatter when possible)
+    "RUF001",   # ambiguous-unicode-character — French text uses these intentionally
+    "RUF002",   # ambiguous unicode in docstrings — same reason
+    "RUF003",   # ambiguous unicode in comments — same reason
+    "PLC0415",  # imports inside functions — used for optional torch / lazy umap
+    "PLW2901",  # redefined-loop-name — common PyTorch pattern (batch = batch.to(dev))
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["PLR2004", "S101"]
-"scripts/*" = ["T201"]
+"tests/*" = ["PLR2004", "S101", "PLC0415"]
+"scripts/*" = ["T201", "E402"]
+"notebooks/**/*.ipynb" = ["E402", "F401"]
 
 [tool.ruff.format]
 quote-style = "double"
