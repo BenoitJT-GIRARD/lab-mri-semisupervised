@@ -46,7 +46,7 @@ def main() -> None:
     ).astype(float)
 
     feats_std, _ = standardise(feats)
-    feats_red, pca = reduce_pca(feats_std, target_variance=0.95)
+    feats_red, _pca = reduce_pca(feats_std, target_variance=0.95)
     print(f"[info] PCA : {feats_red.shape[1]} composantes (variance cumulée ≥ 0.95)")
 
     results = [

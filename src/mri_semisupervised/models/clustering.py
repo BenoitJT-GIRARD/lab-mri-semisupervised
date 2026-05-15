@@ -232,7 +232,9 @@ def build_clustering_report(results: list[ClusteringResult]) -> pd.DataFrame:
         row.update(r.extras)
         rows.append(row)
     df = pd.DataFrame(rows)
-    return df.sort_values("ari_vs_truth", ascending=False, na_position="last").reset_index(drop=True)
+    return df.sort_values("ari_vs_truth", ascending=False, na_position="last").reset_index(
+        drop=True
+    )
 
 
 def assign_weak_labels(

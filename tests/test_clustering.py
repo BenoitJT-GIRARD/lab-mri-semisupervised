@@ -97,9 +97,12 @@ def test_assign_weak_labels_excludes_strong(
         {
             "image_id": [f"id_{i}" for i in range(len(feats))],
             "path": [f"p_{i}" for i in range(len(feats))],
-            "split": ["labeled" if not np.isnan(truth[i]) else "unlabeled" for i in range(len(feats))],
+            "split": [
+                "labeled" if not np.isnan(truth[i]) else "unlabeled" for i in range(len(feats))
+            ],
             "label_name": [
-                "normal" if truth[i] == 0 else "cancer" if truth[i] == 1 else None for i in range(len(feats))
+                "normal" if truth[i] == 0 else "cancer" if truth[i] == 1 else None
+                for i in range(len(feats))
             ],
             "label_index": [int(t) if not np.isnan(t) else None for t in truth],
         }

@@ -41,7 +41,9 @@ def _toy_loader(num_samples: int = 6) -> DataLoader:
 def test_evaluate_returns_complete_report() -> None:
     set_global_seeds(0)
     model = build_classifier("resnet18", num_classes=2)
-    report = evaluate(model, _toy_loader(), class_names=["normal", "cancer"], dev=torch.device("cpu"))
+    report = evaluate(
+        model, _toy_loader(), class_names=["normal", "cancer"], dev=torch.device("cpu")
+    )
     assert 0.0 <= report.accuracy <= 1.0
     assert 0.0 <= report.f1_macro <= 1.0
     assert set(report.f1_per_class) == {"normal", "cancer"}

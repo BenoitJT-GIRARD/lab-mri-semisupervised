@@ -206,8 +206,12 @@ def train_supervised(
     model = build_classifier(cfg.architecture, cfg.num_classes).to(dev)
     _set_backbone_trainable(model, trainable=True)
 
-    train_loader = make_loader(train_paths, train_labels, cfg.batch_size, train=True, image_size=cfg.image_size)
-    test_loader = make_loader(test_paths, test_labels, cfg.batch_size, train=False, image_size=cfg.image_size)
+    train_loader = make_loader(
+        train_paths, train_labels, cfg.batch_size, train=True, image_size=cfg.image_size
+    )
+    test_loader = make_loader(
+        test_paths, test_labels, cfg.batch_size, train=False, image_size=cfg.image_size
+    )
 
     optimiser = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
@@ -251,7 +255,9 @@ def train_semi_supervised(
 
     # Phase 1 : pré-entraînement sur labels faibles, head + backbone entraînables.
     _set_backbone_trainable(model, trainable=True)
-    weak_loader = make_loader(weak_paths, weak_labels, cfg.batch_size, train=True, image_size=cfg.image_size)
+    weak_loader = make_loader(
+        weak_paths, weak_labels, cfg.batch_size, train=True, image_size=cfg.image_size
+    )
     optimiser = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
         lr=cfg.learning_rate,
@@ -266,10 +272,18 @@ def train_semi_supervised(
 
     # Phase 2 : fine-tuning sur jeu fortement labellisé.
     strong_train_loader = make_loader(
-        strong_train_paths, strong_train_labels, cfg.batch_size, train=True, image_size=cfg.image_size
+        strong_train_paths,
+        strong_train_labels,
+        cfg.batch_size,
+        train=True,
+        image_size=cfg.image_size,
     )
     strong_test_loader = make_loader(
-        strong_test_paths, strong_test_labels, cfg.batch_size, train=False, image_size=cfg.image_size
+        strong_test_paths,
+        strong_test_labels,
+        cfg.batch_size,
+        train=False,
+        image_size=cfg.image_size,
     )
 
     optimiser = torch.optim.AdamW(
