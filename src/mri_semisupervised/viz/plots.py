@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from PIL import Image
+from PIL import Image, ImageOps
 from sklearn.manifold import TSNE
-from sklearn.metrics import RocCurveDisplay, roc_curve
+from sklearn.metrics import RocCurveDisplay, roc_auc_score, roc_curve
 
 try:
     import umap
@@ -68,6 +68,39 @@ def plot_pixel_stats(
     sns.histplot(stats["std"], bins=30, ax=axes[1], color="#fd8d3c")
     axes[1].set_title("Distribution de l'écart-type des pixels")
     axes[1].set_xlabel("écart-type")
+    fig.tight_layout()
+    if save_path is not None:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=140, bbox_inches="tight")
+    return fig
+
+
+def plot_equalization(
+    image_path: str | Path,
+    save_path: Path | None = None,
+) -> plt.Figure:
+    """Compare une IRM avant / après égalisation d'histogramme.
+
+    On affiche l'image d'origine et l'image égalisée, puis les deux
+    histogrammes d'intensité, pour visualiser l'étalement du contraste.
+    """
+    with Image.open(image_path) as img:
+        original = np.asarray(img.convert("L"))
+    equalized = np.asarray(ImageOps.equalize(Image.fromarray(original)))
+
+    fig, axes = plt.subplots(2, 2, figsize=(9, 7))
+    axes[0][0].imshow(original, cmap="gray")
+    axes[0][0].set_title("IRM d'origine")
+    axes[0][0].axis("off")
+    axes[0][1].imshow(equalized, cmap="gray")
+    axes[0][1].set_title("Après égalisation")
+    axes[0][1].axis("off")
+    axes[1][0].hist(original.ravel(), bins=256, range=(0, 255), color="#3182bd")
+    axes[1][0].set_title("Histogramme d'origine")
+    axes[1][0].set_xlabel("intensité")
+    axes[1][1].hist(equalized.ravel(), bins=256, range=(0, 255), color="#fd8d3c")
+    axes[1][1].set_title("Histogramme égalisé")
+    axes[1][1].set_xlabel("intensité")
     fig.tight_layout()
     if save_path is not None:
         save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -215,6 +248,34 @@ def plot_roc(
     return fig
 
 
+def plot_roc_compare(
+    curves: dict[str, tuple[np.ndarray, np.ndarray]],
+    title: str = "Courbes ROC — comparaison",
+    save_path: Path | None = None,
+) -> plt.Figure:
+    """Superpose plusieurs courbes ROC binaires sur un même graphique.
+
+    ``curves`` associe un nom de stratégie à un couple ``(y_true, y_score)``
+    où ``y_score`` est la probabilité de la classe « cancer ». L'AUC est
+    rappelée dans la légende.
+    """
+    fig, ax = plt.subplots(figsize=(5.5, 4.6))
+    for name, (y_true, y_score) in curves.items():
+        fpr, tpr, _ = roc_curve(y_true, y_score)
+        auc = roc_auc_score(y_true, y_score)
+        ax.plot(fpr, tpr, linewidth=1.8, label=f"{name} (AUC = {auc:.3f})")
+    ax.plot([0, 1], [0, 1], "k--", linewidth=0.8, label="hasard")
+    ax.set_xlabel("Taux de faux positifs")
+    ax.set_ylabel("Taux de vrais positifs")
+    ax.set_title(title)
+    ax.legend(loc="lower right", frameon=True)
+    fig.tight_layout()
+    if save_path is not None:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=140, bbox_inches="tight")
+    return fig
+
+
 def plot_metrics_bar(
     runs: dict[str, dict[str, float]],
     metric_name: str = "f1_macro",
@@ -261,10 +322,12 @@ def plot_history(history_df: pd.DataFrame, save_path: Path | None = None) -> plt
 __all__ = [
     "plot_2d_scatter",
     "plot_confusion_matrix",
+    "plot_equalization",
     "plot_history",
     "plot_image_grid",
     "plot_metrics_bar",
     "plot_pixel_stats",
     "plot_roc",
+    "plot_roc_compare",
     "project_2d",
 ]

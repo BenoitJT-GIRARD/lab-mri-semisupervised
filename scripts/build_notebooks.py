@@ -210,6 +210,19 @@ print("Résolutions :", dict(list(summary["resolutions"].items())[:5]))
         )
     )
 
+    cells.append(
+        md(
+            """
+**Équilibre des classes** : le jeu fortement labellisé est parfaitement
+équilibré (50 *normal* / 50 *cancer*). Il n'y a donc pas de déséquilibre à
+corriger à ce stade : aucun *oversampling* n'est nécessaire sur les labels
+forts. On restera en revanche attentif à la répartition des pseudo-labels
+faibles produits par le clustering (§3.5), qui peut, elle, être déséquilibrée
+selon la taille des clusters.
+"""
+        )
+    )
+
     cells.append(md("### 1.2 Galeries d'exemples"))
 
     cells.append(
@@ -304,6 +317,49 @@ détection. Le traitement reste documenté ici pour traçabilité.
         )
     )
 
+    cells.append(md("### 1.4 Égalisation d'histogramme"))
+
+    cells.append(
+        md(
+            """
+Les IRM sont souvent peu contrastées : une grande partie des pixels se
+concentre sur une plage d'intensités étroite. L'**égalisation d'histogramme**
+ré-étale ces intensités sur toute la plage 0-255, ce qui rehausse le contraste
+et fait mieux ressortir les structures. On la visualise ici sur une image
+*cancer*.
+"""
+        )
+    )
+
+    cells.append(
+        code(
+            """
+from curelyticsia.viz.plots import plot_equalization
+
+# On prend une image labellisée "cancer" pour voir l'effet sur une lésion.
+sample_path = df.loc[mask_cancer, "path"].iloc[0]
+_ = plot_equalization(sample_path, save_path=FIGURES_DIR / "equalization_demo.png")
+"""
+        )
+    )
+
+    cells.append(
+        md(
+            """
+**Interprétation** : après égalisation, l'histogramme est nettement plus étalé
+et le contraste de l'IRM augmente. C'est utile pour l'inspection visuelle et
+pour un modèle entraîné *sur des IRM*.
+
+Pour l'**extraction de features**, on conserve toutefois la normalisation
+ImageNet standard (sans égalisation) : ResNet50 a été pré-entraîné sur des
+images naturelles non égalisées, et modifier la distribution des intensités en
+amont dégraderait l'alignement avec le domaine source. L'égalisation est donc
+documentée comme une piste à activer si l'on ré-entraîne un backbone
+spécifiquement sur l'imagerie médicale.
+"""
+        )
+    )
+
     cells.append(md("## 2. Prétraitement et extraction de features ResNet50"))
 
     cells.append(
@@ -314,6 +370,9 @@ détection. Le traitement reste documenté ici pour traçabilité.
 - Resize à 256, *center crop* à 224×224, normalisation **ImageNet** (mean / std).
 - Backbone **ResNet50** pré-entraîné sur ImageNet, **toutes les couches gelées**
   (recommandation explicite de l'énoncé : *« geler les couches convolutionnelles »*).
+  ResNet (He et al., 2015) a remporté ImageNet 2015 et reste une référence pour
+  le transfert de features : ses représentations génériques se transfèrent bien
+  à de nouveaux domaines, d'où ce choix.
 - La tête de classification ImageNet est remplacée par `Identity` ; on récupère
   la sortie du *global average pool* — un vecteur de **2 048 dimensions** par
   image.
@@ -342,6 +401,72 @@ print(index_df["split"].value_counts().to_string())
 print("Aucun NaN ?      ", not np.isnan(features).any())
 print("Norme moyenne L2 :", float(np.linalg.norm(features, axis=1).mean()))
 print("Variance par dim :", float(features.var(axis=0).mean()))
+"""
+        )
+    )
+
+    cells.append(md("### 2.1 Coût de l'extraction (mémoire et temps)"))
+
+    cells.append(
+        md(
+            """
+On regarde concrètement ce que coûte l'extraction, pour pouvoir raisonner sur
+le passage à l'échelle (4 M d'images) :
+
+- la **mémoire** occupée par la matrice d'embeddings ;
+- le **temps** par image, mesuré sur un petit lot de 32 images.
+"""
+        )
+    )
+
+    cells.append(
+        code(
+            """
+import time
+
+import torch
+from torch.utils.data import DataLoader
+
+from curelyticsia.config import device
+from curelyticsia.data.preprocess import ImagePathsDataset, build_eval_transform
+from curelyticsia.features.extractor import build_backbone
+
+# Empreinte mémoire de la matrice d'embeddings déjà calculée.
+mem_mb = features.nbytes / 1e6
+print(f"Matrice d'embeddings : {features.shape} -> {mem_mb:.1f} Mo en RAM (float32)")
+
+# Petit benchmark de débit : on chronomètre l'extraction sur 32 images.
+sample_paths = [str(r.path) for r in records[:32]]
+ds_bench = ImagePathsDataset(sample_paths, transform=build_eval_transform())
+loader_bench = DataLoader(ds_bench, batch_size=32, shuffle=False)
+
+backbone, _ = build_backbone("resnet50", pretrained=True)
+dev = torch.device(device())
+backbone.to(dev).eval()
+
+start = time.perf_counter()
+with torch.inference_mode():
+    for batch, _ in loader_bench:
+        _ = backbone(batch.to(dev))
+elapsed = time.perf_counter() - start
+
+per_image_ms = elapsed / len(sample_paths) * 1000
+print(f"Extraction : {elapsed:.2f} s pour 32 images -> {per_image_ms:.1f} ms/image ({device()})")
+hours_4m = per_image_ms * 4_000_000 / 1000 / 3600
+print(f"Extrapolation 4 M images : ~{hours_4m:.1f} h sur un seul GPU")
+"""
+        )
+    )
+
+    cells.append(
+        md(
+            """
+**Lecture** : la matrice d'embeddings tient en quelques dizaines de Mo (1 506 ×
+2 048 floats), donc la RAM n'est pas un point bloquant ici. Le temps par image
+mesuré sert de base à l'estimation de coût du passage à l'échelle (slide
+*scaling* de la présentation) : il reste raisonnable et parallélisable sur
+plusieurs GPU. Le cache Parquet garantit en plus qu'on ne paie l'extraction
+**qu'une seule fois**.
 """
         )
     )
@@ -403,6 +528,25 @@ _ = plot_2d_scatter(
     cells.append(md("### 3.3 Comparaison de plusieurs algorithmes de clustering"))
 
     cells.append(
+        md(
+            """
+On compare volontairement **quatre familles** d'algorithmes, comme le
+recommandent les références classiques du clustering — plutôt que de se fier à
+une seule méthode :
+
+- **centroïdes** : K-Means (Lloyd, 1957) — rapide, baseline incontournable ;
+- **hiérarchique** : Agglomerative (liens *ward* et *average*) ;
+- **probabiliste** : Gaussian Mixture (clusters ellipsoïdaux) ;
+- **densité** : DBSCAN (Ester et al., 1996) — détecte le bruit, ne fixe pas le
+  nombre de clusters a priori.
+
+L'arbitre final est l'**ARI** mesuré sur les 100 images dont on connaît la
+vérité terrain.
+"""
+        )
+    )
+
+    cells.append(
         code(
             """
 from curelyticsia.models.clustering import (
@@ -449,6 +593,67 @@ report
 - DBSCAN peut produire un nombre arbitraire de clusters (ou 0). Sur des
   embeddings 2048d, il est rarement compétitif sans tuning approfondi : on le
   conserve néanmoins comme baseline pour tracer le résultat.
+"""
+        )
+    )
+
+    cells.append(
+        md(
+            """
+**Impact des hyperparamètres** — pour vérifier que nos choix ne sont pas
+arbitraires, on fait varier les principaux paramètres et on regarde leur effet
+sur l'ARI :
+
+- DBSCAN : on balaie le rayon `eps` (à `min_samples` fixé) ;
+- K-Means : on balaie le nombre de clusters `k`.
+"""
+        )
+    )
+
+    cells.append(
+        code(
+            """
+# 1) DBSCAN : effet du rayon de voisinage eps (min_samples=10).
+print("DBSCAN — impact de eps (min_samples=10) :")
+dbscan_rows = []
+for eps in [4.0, 6.0, 8.0, 10.0, 12.0]:
+    res = fit_dbscan(features_red, truth, eps=eps, min_samples=10)
+    dbscan_rows.append(
+        {
+            "eps": eps,
+            "n_clusters": res.n_clusters,
+            "ari": res.ari_vs_truth,
+            "noise_ratio": res.extras.get("noise_ratio"),
+        }
+    )
+dbscan_sweep = pd.DataFrame(dbscan_rows)
+print(dbscan_sweep.to_string(index=False))
+
+# 2) K-Means : effet du nombre de clusters k.
+print("\\nK-Means — impact de k :")
+kmeans_rows = []
+for k in [2, 3, 4, 5]:
+    res = fit_kmeans(features_red, truth, n_clusters=k, seed=SEED)
+    kmeans_rows.append({"k": k, "ari": res.ari_vs_truth, "silhouette": res.silhouette})
+kmeans_sweep = pd.DataFrame(kmeans_rows)
+print(kmeans_sweep.to_string(index=False))
+"""
+        )
+    )
+
+    cells.append(
+        md(
+            """
+**Lecture** : pour DBSCAN, un `eps` faible (4-6) classe la quasi-totalité des
+points en bruit (aucun cluster formé) ; en augmentant `eps`, un cluster unique
+finit par émerger mais le taux de bruit reste élevé et l'ARI plafonne très bas
+(≤ 0,09). DBSCAN ne parvient donc pas à isoler deux groupes nets sur ces
+embeddings 2048d. Pour K-Means, l'ARI augmente quand `k` grandit (des clusters
+plus fins sont plus homogènes vis-à-vis du label binaire) tandis que la
+silhouette diminue ; mais notre objectif est une labellisation **binaire**
+normal/cancer, donc on conserve `k = 2`, cohérent avec le nombre de classes.
+Ces valeurs restent modestes : c'est l'**Agglomerative (ward)** retenu au §3.4
+(ARI ≈ 0,60) qui sépare le mieux les deux classes.
 """
         )
     )
@@ -818,6 +1023,59 @@ hist_df.tail(10)
         )
     )
 
+    cells.append(md("### 4.3 Courbes ROC"))
+
+    cells.append(
+        md(
+            """
+La courbe ROC montre le compromis entre vrais positifs et faux positifs quand
+on fait varier le seuil de décision. On cumule les probabilités prédites sur
+les 5 folds pour chaque stratégie, puis on trace les deux courbes sur le même
+graphique (l'aire sous la courbe, l'AUC, est rappelée dans la légende).
+"""
+        )
+    )
+
+    cells.append(
+        code(
+            """
+from curelyticsia.viz.plots import plot_roc_compare
+
+
+def pool_scores(reports_list):
+    y_true = []
+    y_score = []
+    for r in reports_list:
+        y_true.extend(r.y_true)
+        y_score.extend(r.y_score)
+    return np.array(y_true), np.array(y_score)
+
+
+curves = {
+    "Supervisé pur": pool_scores(reports["supervised"]),
+    "Semi-supervisé": pool_scores(reports["semi_supervised"]),
+}
+_ = plot_roc_compare(
+    curves,
+    title="Courbes ROC — probas cumulées sur les 5 folds",
+    save_path=FIGURES_DIR / "roc_curve.png",
+)
+"""
+        )
+    )
+
+    cells.append(
+        md(
+            """
+**Interprétation** : plus une courbe se rapproche du coin supérieur gauche,
+meilleur est le classifieur. Les deux stratégies obtiennent une AUC élevée
+(features ResNet très séparables) ; on compare surtout leur comportement dans
+la zone à faible taux de faux positifs, la plus pertinente en e-santé où l'on
+veut manquer le moins de cancers possible.
+"""
+        )
+    )
+
     cells.append(md("## 5. Discussion : justification de l'approche semi-supervisée"))
 
     cells.append(
@@ -841,7 +1099,7 @@ hist_df.tail(10)
 
 - *learning rate* (1e-4 sur la phase fortement labellisée, divisé par 2 lors du
   fine-tuning pour préserver le pré-entraînement) ;
-- nombre d'époques (5 en pré-entraînement faible, 8 en fine-tuning fort) ;
+- nombre d'époques (3 en pré-entraînement faible, 6 en fine-tuning fort) ;
 - *batch size* à 16 (compromis sur des images 224×224 en CPU).
 
 **Erreur la plus coûteuse** : un **faux négatif sur cancer** (manquer une

@@ -15,11 +15,23 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 from torch.utils.data import Dataset
 from torchvision import transforms
 
 from curelyticsia.config import IMAGENET_MEAN, IMAGENET_STD, INPUT_SIZE
+
+
+def equalize_image(image: Image.Image) -> Image.Image:
+    """Égalisation d'histogramme sur une IRM (niveaux de gris).
+
+    On repasse l'image en niveaux de gris puis on égalise son histogramme :
+    les intensités sont ré-étalées sur toute la plage 0-255, ce qui rehausse
+    le contraste et fait mieux ressortir les structures sur des IRM ternes.
+    On l'utilise surtout pour l'exploration visuelle (voir notebook 1).
+    """
+    gray = image.convert("L")
+    return ImageOps.equalize(gray)
 
 
 def build_eval_transform(image_size: int = INPUT_SIZE) -> Callable[[Image.Image], object]:
@@ -89,4 +101,5 @@ __all__ = [
     "ImagePathsDataset",
     "build_eval_transform",
     "build_train_transform",
+    "equalize_image",
 ]

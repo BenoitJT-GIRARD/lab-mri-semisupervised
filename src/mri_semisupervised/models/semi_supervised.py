@@ -60,6 +60,10 @@ class EvalReport:
     recall_per_class: dict[str, float]
     roc_auc: float | None
     confusion_matrix: list[list[int]]
+    # On garde aussi la vérité terrain et la probabilité de la classe "cancer"
+    # pour pouvoir retracer la courbe ROC dans le notebook.
+    y_true: list[int] = field(default_factory=list)
+    y_score: list[float] = field(default_factory=list)
     history: list[EpochLog] = field(default_factory=list)
 
 
@@ -167,6 +171,8 @@ def evaluate(
         recall_per_class={class_names[i]: float(rec[i]) for i in range(len(class_names))},
         roc_auc=auc,
         confusion_matrix=cm,
+        y_true=[int(v) for v in y_true],
+        y_score=[float(p) for p in y_prob],
     )
 
 

@@ -16,6 +16,7 @@ from curelyticsia.data.preprocess import (
     ImagePathsDataset,
     build_eval_transform,
     build_train_transform,
+    equalize_image,
 )
 
 
@@ -65,6 +66,15 @@ def test_image_paths_dataset_falls_back_to_index(tmp_path: Path) -> None:
     _, idx = ds[0]
     assert idx == 0
     assert len(ds) == 2
+
+
+def test_equalize_image_returns_grayscale_same_size(tmp_path: Path) -> None:
+    img_path = tmp_path / "img.jpg"
+    _make_image(img_path, mode="L", size=64)
+    with Image.open(img_path) as im:
+        eq = equalize_image(im)
+    assert eq.mode == "L"
+    assert eq.size == (64, 64)
 
 
 def test_label_length_mismatch_raises(tmp_path: Path) -> None:
