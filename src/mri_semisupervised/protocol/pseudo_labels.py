@@ -47,6 +47,7 @@ class PseudoLabelSet:
     image_ids: np.ndarray
     labels: np.ndarray
     candidates: dict[str, float] = field(default_factory=dict)
+    failed_candidates: dict[str, str] = field(default_factory=dict)
 
     def __len__(self) -> int:
         return len(self.image_ids)
@@ -94,14 +95,34 @@ def _candidates(features: np.ndarray, seed: int, cfg: ClusteringConfig):
 
     ``truth=None`` throughout: the ARI is computed afterwards, by the caller, on the labels
     it is allowed to read. The clustering itself is unsupervised, and stays so.
+
+    A candidate that cannot fit on a given fold — the GMM does this when the fold's
+    covariance turns out singular — is dropped **for that fold**, and the failure is
+    returned rather than swallowed. Silently substituting another method would change what
+    the experiment compares without saying so.
     """
-    return [
-        fit_kmeans(features, None, n_clusters=cfg.n_clusters, seed=seed),
-        fit_agglomerative(features, None, n_clusters=cfg.n_clusters, linkage="ward"),
-        fit_agglomerative(features, None, n_clusters=cfg.n_clusters, linkage="average"),
-        fit_gmm(features, None, n_components=cfg.n_clusters, seed=seed),
-        fit_dbscan(features, None, eps=8.0, min_samples=10),
-    ]
+    factories = {
+        "KMeans": lambda: fit_kmeans(features, None, n_clusters=cfg.n_clusters, seed=seed),
+        "Agglomerative(ward)": lambda: fit_agglomerative(
+            features, None, n_clusters=cfg.n_clusters, linkage="ward"
+        ),
+        "Agglomerative(average)": lambda: fit_agglomerative(
+            features, None, n_clusters=cfg.n_clusters, linkage="average"
+        ),
+        "GMM": lambda: fit_gmm(features, None, n_components=cfg.n_clusters, seed=seed),
+        "DBSCAN": lambda: fit_dbscan(features, None, eps=8.0, min_samples=10),
+    }
+
+    fitted, failures = [], {}
+    for name, factory in factories.items():
+        try:
+            fitted.append(factory())
+        except Exception as error:
+            failures[name] = f"{type(error).__name__}: {error}"[:120]
+
+    if not fitted:
+        raise RuntimeError(f"every clustering candidate failed on this fold: {failures}")
+    return fitted, failures
 
 
 def fit_pseudo_labels(
@@ -128,9 +149,14 @@ def fit_pseudo_labels(
     cfg = cfg or ClusteringConfig()
 
     id_to_row = {image_id: row for row, image_id in enumerate(feature_ids)}
-    usable_ids = np.array(
-        [i for i in (*unlabelled_ids, *train_ids) if i in id_to_row], dtype=object
-    )
+
+    # The union, each image once. An image may belong to both sets — that is exactly the
+    # defect the legacy protocol carries, and it must survive to be measured.
+    seen: dict[object, None] = {}
+    for image_id in (*unlabelled_ids, *train_ids):
+        if image_id in id_to_row:
+            seen.setdefault(image_id, None)
+    usable_ids = np.array(list(seen), dtype=object)
     rows = np.array([id_to_row[i] for i in usable_ids])
     if len(rows) == 0:
         raise ValueError("no feature row matches the requested image ids")
@@ -139,12 +165,14 @@ def fit_pseudo_labels(
     subset, _ = reduce_pca(subset, target_variance=cfg.pca_variance)
 
     train_id_set = set(train_ids.tolist())
+    pool_id_set = set(np.asarray(unlabelled_ids).tolist())
     is_train = np.array([i in train_id_set for i in usable_ids])
+    is_pool = np.array([i in pool_id_set for i in usable_ids])
     truth = np.full(len(usable_ids), -1, dtype=int)
     label_of = dict(zip(train_ids.tolist(), np.asarray(train_labels).tolist(), strict=True))
     truth[is_train] = [label_of[i] for i in usable_ids[is_train]]
 
-    results = _candidates(subset, seed, cfg)
+    results, failures = _candidates(subset, seed, cfg)
     scored = {
         result.name: float(adjusted_rand_score(truth[is_train], result.labels[is_train]))
         for result in results
@@ -153,14 +181,17 @@ def fit_pseudo_labels(
 
     aligned = align_by_majority(best.labels, truth, allowed=is_train)
 
-    is_unlabelled = ~is_train
-    keep = is_unlabelled & (aligned != NOISE)
+    # Pseudo-labels cover the pool the caller handed over. When that pool has been cleaned
+    # of the copies of evaluation images, nothing labelled can appear here; when it has
+    # not — the legacy protocol — the copies come through, and that is the leak.
+    keep = is_pool & (aligned != NOISE)
     return PseudoLabelSet(
         method_name=best.name,
         ari_on_train=scored[best.name],
         image_ids=usable_ids[keep],
         labels=aligned[keep].astype(int),
         candidates=scored,
+        failed_candidates=failures,
     )
 
 
@@ -181,6 +212,7 @@ def permute(pseudo: PseudoLabelSet, seed: int) -> PseudoLabelSet:
         image_ids=pseudo.image_ids,
         labels=shuffled,
         candidates=pseudo.candidates,
+        failed_candidates=pseudo.failed_candidates,
     )
 
 

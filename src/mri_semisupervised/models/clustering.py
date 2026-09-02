@@ -143,8 +143,18 @@ def fit_gmm(
     n_components: int = 2,
     seed: int = 42,
 ) -> ClusteringResult:
-    """Gaussian Mixture Model."""
-    model = GaussianMixture(n_components=n_components, random_state=seed, covariance_type="full")
+    """Gaussian Mixture Model.
+
+    ``reg_covar`` is raised well above the scikit-learn default: a full covariance over
+    roughly a hundred PCA components, estimated from about fourteen hundred points, is
+    routinely ill-conditioned, and the fit then fails outright on some folds.
+    """
+    model = GaussianMixture(
+        n_components=n_components,
+        random_state=seed,
+        covariance_type="full",
+        reg_covar=1e-4,
+    )
     labels = model.fit_predict(features)
     sil, db, ch = _safe_internal_metrics(features, labels)
     return ClusteringResult(

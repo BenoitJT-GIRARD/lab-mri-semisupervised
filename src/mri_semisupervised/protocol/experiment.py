@@ -186,6 +186,7 @@ def run_experiment(
                 "pseudo_method": pseudo.method_name if pseudo else None,
                 "pseudo_ari_on_train": pseudo.ari_on_train if pseudo else None,
                 "n_pseudo": len(pseudo) if pseudo else 0,
+                "failed_candidates": (";".join(sorted(pseudo.failed_candidates)) if pseudo else ""),
             }
         )
 
