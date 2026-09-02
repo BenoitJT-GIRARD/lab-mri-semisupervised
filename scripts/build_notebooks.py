@@ -1,24 +1,39 @@
-"""Génère programmatiquement les deux notebooks livrables.
+"""Generate the two notebooks programmatically.
 
-Pourquoi générer les ``.ipynb`` plutôt que les rédiger à la main ?
+Why build the ``.ipynb`` rather than write them by hand:
 
-* Reproductibilité : le code source des cellules vit dans le repo, sous
-  contrôle de version, lisible et diffable.
-* Cohérence : les imports, les sections et les figures sont garantis identiques
-  entre le module ``mri_semisupervised`` et les notebooks.
-* Industrialisation : le pipeline ``uv run jupyter nbconvert --execute`` peut
-  être rejoué sans intervention manuelle.
+* the source of every cell lives in the repository, versioned, readable and diffable;
+* the imports and the sections cannot drift away from the ``mri_semisupervised`` package,
+  because they are written against it here;
+* ``uv run python -m nbconvert --execute`` replays them with no manual step, so the stored
+  outputs are always a capture of a real run rather than an edited one.
+
+Usage:
+    uv run python scripts/build_notebooks.py
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import nbformat as nbf
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOKS_DIR = ROOT / "notebooks"
+
+PREAMBLE = """
+import sys
+from pathlib import Path
+
+ROOT = Path.cwd().parent if Path.cwd().name == "notebooks" else Path.cwd()
+sys.path.insert(0, str(ROOT / "src"))
+
+import numpy as np
+import pandas as pd
+
+pd.set_option("display.width", 120)
+pd.set_option("display.max_columns", 20)
+"""
 
 
 def md(source: str) -> nbf.NotebookNode:
@@ -30,1228 +45,375 @@ def code(source: str) -> nbf.NotebookNode:
 
 
 def write_notebook(path: Path, cells: list[nbf.NotebookNode]) -> None:
-    nb = nbf.v4.new_notebook(cells=cells)
-    nb["metadata"] = {
+    notebook = nbf.v4.new_notebook(cells=cells)
+    notebook["metadata"] = {
         "kernelspec": {
             "display_name": "Python (mri_semisupervised)",
             "language": "python",
-            "name": "mri_semisupervised",
+            "name": "python3",
         },
-        "language_info": {
-            "name": "python",
-            "version": "3.12",
-        },
+        "language_info": {"name": "python", "version": "3.12"},
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        nbf.write(nb, f)
+    with path.open("w", encoding="utf-8") as handle:
+        nbf.write(notebook, handle)
     print(f"[ok] {path}")
 
 
-def build_notebook_one() -> list[nbf.NotebookNode]:
-    cells: list[nbf.NotebookNode] = []
+# --------------------------------------------------------------------------- #
+# 01 — the dataset
+# --------------------------------------------------------------------------- #
+def build_dataset_notebook() -> list[nbf.NotebookNode]:
+    return [
+        md("""
+# 01 — The dataset, and what hashing it revealed
 
-    cells.append(
-        md(
-            """
-# 01 — Exploration, extraction de features et clustering exploratoire
+1 506 MRI files: a labelled pool of 100 (normal / cancer) and an unlabelled pool of 1 406.
+The plan was to embed them with a frozen ResNet50, cluster the embeddings, and turn the
+clusters into pseudo-labels for a semi-supervised model.
 
-**Mission BrainScanAI — *CurelyticsIA*** &nbsp;·&nbsp; *Option B*
+This notebook starts one step earlier, with a question the original pipeline never asked:
+**are these 1 506 files 1 506 images?**
+"""),
+        code(PREAMBLE),
+        md("""
+## 1. Identity comes from content, not from the path
 
-Vous êtes Data Scientist junior en computer vision. Le projet R&D *BrainScanAI*
-vise à automatiser la détection de tumeurs cérébrales sur des IRM. Le dataset
-fourni par Clara Martin contient :
+The first version of this pipeline identified an image by an MD5 of its **file path**. Two
+copies of one scan filed in two folders therefore received two different identifiers — and
+the guard meant to keep the labelled images out of the unlabelled pool, an exclusion on the
+folder name, had nothing to catch them with.
 
-- **100 images fortement labellisées** (50 *normal* / 50 *cancer*) annotées par
-  des radiologues partenaires ;
-- **1 406 images non labellisées** issues du même flux d'acquisition.
+Here an image is what it contains.
+"""),
+        code("""
+from mri_semisupervised.config import LABELED_DIR, UNLABELED_DIR
+from mri_semisupervised.data.manifest import apply_duplicate_rules, build_manifest, summarise
 
-Ce premier notebook couvre les **étapes 1 à 3** de la mission :
+manifest = apply_duplicate_rules(build_manifest(LABELED_DIR, UNLABELED_DIR))
+facts = summarise(manifest)
+for key, value in facts.items():
+    print(f"{key:34} {value}")
+"""),
+        md("""
+## 2. What the hashes found
 
-1. Chargement et exploration du jeu de radiographies.
-2. Prétraitement et **extraction des features** via un modèle pré-entraîné.
-3. **Analyse non supervisée** : réduction de dimension + clustering, comparaison
-   de plusieurs algorithmes, choix d'une méthode et **labellisation faible** des
-   1 406 images non annotées.
+Three findings, none of them visible from the folder listing:
 
-> ⚠️ **Règle métier non négociable** — les jeux *fortement* et *faiblement*
-> labellisés ne sont jamais mélangés ; ils sont conservés dans deux structures
-> séparées tout au long du projet.
-"""
-        )
-    )
+* the labelled pool holds **one image twice**, so the evaluation set is 99 images, not 100 —
+  and the class balance is 50 / 49, not the announced 50 / 50;
+* **31 of those 99 evaluation images also sit in the unlabelled pool**, byte for byte. The
+  semi-supervised arm pre-trains on that pool, so a third of every test fold was already
+  seen — whatever the cross-validation does;
+* the unlabelled pool carries 63 redundant copies, which silently weight the pre-training.
 
-    cells.append(
-        md(
-            """
-## Définition du *done* (notebook 1)
-
-| Critère | Cible |
-|---|---|
-| Inventaire complet du dataset (intégrité, résolution, modes) | ✅ |
-| Outliers documentés et traités | ✅ |
-| Features ResNet50 calculées pour les 1 506 images | ✅ |
-| Au moins **4 algorithmes de clustering** testés | ✅ |
-| ARI clustering (vs labels forts) ≥ 0.10 (mieux que le hasard) | objectif |
-| Pseudo-labels « faibles » exportés en CSV pour le notebook 2 | ✅ |
-
-L'erreur la plus coûteuse est le **faux négatif sur cancer** (passer à côté
-d'une tumeur). Cette priorité métier oriente la sélection des métriques (recall
-de la classe *cancer* avant accuracy globale) — détaillé dans le notebook 2.
-"""
-        )
-    )
-
-    cells.append(md("## 1. Chargement et exploration du jeu de radiographies"))
-
-    cells.append(
-        code(
-            """
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-import numpy as np
-import pandas as pd
-
-ROOT = Path.cwd().parent if Path.cwd().name == "notebooks" else Path.cwd()
-sys.path.insert(0, str(ROOT / "src"))
-
-from mri_semisupervised.config import (  # noqa: E402
-    CLASS_TO_INDEX,
-    CLASSES,
-    ClusteringConfig,
-    FIGURES_DIR,
-    FeatureConfig,
-    PROCESSED_DIR,
-    SEED,
-    ensure_dirs,
-    set_global_seeds,
+The leak is also **asymmetric**: 23 `normal` against 8 `cancer`. It does not add noise, it
+leans.
+"""),
+        code("""
+leaked_ids = set(
+    manifest.loc[
+        (manifest["pool"] == "unlabelled") & (manifest["exclusion_reason"] == "copy_of_labelled"),
+        "image_id",
+    ]
 )
+leaked = manifest[(manifest["pool"] == "labelled") & manifest["image_id"].isin(leaked_ids)]
+print(f"evaluation images with a copy in the unlabelled pool: {leaked['image_id'].nunique()}")
+leaked.drop_duplicates("image_id")["label"].value_counts().rename("images").to_frame()
+"""),
+        md("""
+### The rules, written down because they are decisions
 
-ensure_dirs()
-set_global_seeds(SEED)
+| situation | decision | why |
+|---|---|---|
+| labelled image duplicated in the unlabelled pool | leaves **that pool** | removing it from the evaluation would be choosing the test set after seeing it |
+| redundant copies inside the unlabelled pool | one kept | otherwise they weight the pre-training without saying so |
+| an image repeated inside the labelled pool | one kept | kept twice, it sits on both sides of a fold |
+| the same content under two labels | **build stops** | that is not a duplicate, it is a contradiction |
+"""),
+        code("""
+manifest["exclusion_reason"].fillna("kept").value_counts().rename("files").to_frame()
+"""),
+        md("""
+## 3. What the images look like
 
-print(f"Project root : {ROOT}")
-print(f"Classes      : {CLASSES} → {CLASS_TO_INDEX}")
-print(f"Seed         : {SEED}")
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-# Extraction du dataset (idempotent : ne ré-extrait pas si déjà présent).
-import subprocess
-
-result = subprocess.run(
-    [sys.executable, str(ROOT / "scripts" / "extract_dataset.py")],
-    capture_output=True,
-    text=True,
-    check=True,
-)
-print(result.stdout)
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-from mri_semisupervised.data.loader import (
-    discover_images,
-    records_to_dataframe,
-    summarise_dataset,
-)
+Everything is 512x512 RGB. The two classes differ in intensity distribution, which is worth
+knowing before reading anything into a clustering that separates them.
+"""),
+        code("""
+from mri_semisupervised.data.loader import compute_pixel_stats, discover_images
+from mri_semisupervised.viz.plots import plot_image_grid, plot_pixel_stats
 
 records, corrupted = discover_images()
-print(f"{len(records):>5} images valides")
-print(f"{len(corrupted):>5} images corrompues écartées")
-if corrupted:
-    for p in corrupted[:5]:
-        print("  -", p)
+print(f"{len(records)} readable files, {len(corrupted)} unreadable")
 
-df = records_to_dataframe(records)
-df.head()
-"""
-        )
-    )
+stats = compute_pixel_stats(records, sample_size=300, seed=0)
+plot_pixel_stats(stats)
+"""),
+        code("""
+labelled = manifest[(manifest["pool"] == "labelled") & manifest["kept_for_training"]]
+sample = labelled.groupby("label").head(4)
+plot_image_grid(sample["path"].tolist(), titles=sample["label"].tolist(), cols=4)
+"""),
+        md("""
+### Histogram equalisation
 
-    cells.append(md("### 1.1 Vue d'ensemble"))
+Stretching the intensities makes structure easier to see. It is used here for looking, not
+for the features: the backbone was trained under ImageNet normalisation, and feeding it
+something else would trade a small visual gain for a distribution shift.
+"""),
+        code("""
+from mri_semisupervised.viz.plots import plot_equalization_demo
 
-    cells.append(
-        code(
-            """
-summary = summarise_dataset(records)
-print("Total       :", summary["total"])
-print("Par split   :", summary["by_split"])
-print("Par label   :", summary["by_label"])
-print("Modes       :", summary["modes"])
-print("Résolutions :", dict(list(summary["resolutions"].items())[:5]))
-"""
-        )
-    )
+plot_equalization_demo(sample["path"].iloc[0])
+"""),
+        md("""
+## 4. Clustering the embeddings
 
-    cells.append(
-        md(
-            """
-**Observations attendues** (à confirmer à l'exécution) :
+Five algorithms on the ResNet50 embeddings, compared on internal metrics and on the ARI
+against the labels.
 
-- 100 images étiquetées (50 *normal* + 50 *cancer*) dans `avec_labels/` et
-  ~1 400 images non labellisées dans `sans_label/`.
-- Toutes les images sont en JPEG 512×512 — la documentation fournie le précise
-  et l'inventaire le confirme.
-- Le mode dominant est `L` (niveaux de gris) ; il est explicitement converti
-  en RGB par le pipeline de preprocessing avant ResNet (qui attend 3 canaux
-  ImageNet).
-"""
-        )
-    )
-
-    cells.append(
-        md(
-            """
-**Équilibre des classes** : le jeu fortement labellisé est parfaitement
-équilibré (50 *normal* / 50 *cancer*). Il n'y a donc pas de déséquilibre à
-corriger à ce stade : aucun *oversampling* n'est nécessaire sur les labels
-forts. On restera en revanche attentif à la répartition des pseudo-labels
-faibles produits par le clustering (§3.5), qui peut, elle, être déséquilibrée
-selon la taille des clusters.
-"""
-        )
-    )
-
-    cells.append(md("### 1.2 Galeries d'exemples"))
-
-    cells.append(
-        code(
-            """
-from mri_semisupervised.viz.plots import plot_image_grid
-
-mask_cancer = (df["split"] == "labeled") & (df["label_name"] == "cancer")
-mask_normal = (df["split"] == "labeled") & (df["label_name"] == "normal")
-mask_unlab = df["split"] == "unlabeled"
-
-cancer_paths = df.loc[mask_cancer, "path"].head(10).tolist()
-normal_paths = df.loc[mask_normal, "path"].head(10).tolist()
-unlab_paths = df.loc[mask_unlab, "path"].head(10).tolist()
-
-_ = plot_image_grid(
-    cancer_paths,
-    titles=[f"cancer · {Path(p).name[:8]}" for p in cancer_paths],
-    cols=5,
-    save_path=FIGURES_DIR / "samples_cancer.png",
-)
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-_ = plot_image_grid(
-    normal_paths,
-    titles=[f"normal · {Path(p).name[:8]}" for p in normal_paths],
-    cols=5,
-    save_path=FIGURES_DIR / "samples_normal.png",
-)
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-_ = plot_image_grid(
-    unlab_paths,
-    titles=[f"? · {Path(p).name[:8]}" for p in unlab_paths],
-    cols=5,
-    save_path=FIGURES_DIR / "samples_unlabeled.png",
-)
-"""
-        )
-    )
-
-    cells.append(md("### 1.3 Statistiques de pixels et détection d'outliers"))
-
-    cells.append(
-        code(
-            """
-from mri_semisupervised.data.loader import compute_pixel_stats, detect_outlier_ids
-from mri_semisupervised.viz.plots import plot_pixel_stats
-
-stats = compute_pixel_stats(records, sample_size=None)  # toutes les images
-print(stats.describe())
-
-_ = plot_pixel_stats(stats, save_path=FIGURES_DIR / "pixel_stats.png")
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-outlier_ids = detect_outlier_ids(stats, z_threshold=4.0)
-print(f"{len(outlier_ids)} outliers détectés (|z| > 4 sur mean ou std)")
-
-# Filtre éventuel : on les conserve dans cette mission (peu nombreux et
-# potentiellement informatifs en imagerie médicale) mais on documente leur
-# présence pour l'étape clustering.
-records_clean = [r for r in records if r.image_id not in set(outlier_ids)]
-print(f"{len(records_clean)} images conservées après filtrage soft")
-"""
-        )
-    )
-
-    cells.append(
-        md(
-            """
-**Choix de traitement des outliers** : on adopte un seuil très conservateur
-(*z* = 4) pour ne supprimer que des cas réellement aberrants (capteur défectueux
-par exemple). En IRM cérébrale, des écarts d'intensité significatifs peuvent
-correspondre à des tumeurs ; supprimer trop agressivement biaiserait la
-détection. Le traitement reste documenté ici pour traçabilité.
-"""
-        )
-    )
-
-    cells.append(md("### 1.4 Égalisation d'histogramme"))
-
-    cells.append(
-        md(
-            """
-Les IRM sont souvent peu contrastées : une grande partie des pixels se
-concentre sur une plage d'intensités étroite. L'**égalisation d'histogramme**
-ré-étale ces intensités sur toute la plage 0-255, ce qui rehausse le contraste
-et fait mieux ressortir les structures. On la visualise ici sur une image
-*cancer*.
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-from mri_semisupervised.viz.plots import plot_equalization
-
-# On prend une image labellisée "cancer" pour voir l'effet sur une lésion.
-sample_path = df.loc[mask_cancer, "path"].iloc[0]
-_ = plot_equalization(sample_path, save_path=FIGURES_DIR / "equalization_demo.png")
-"""
-        )
-    )
-
-    cells.append(
-        md(
-            """
-**Interprétation** : après égalisation, l'histogramme est nettement plus étalé
-et le contraste de l'IRM augmente. C'est utile pour l'inspection visuelle et
-pour un modèle entraîné *sur des IRM*.
-
-Pour l'**extraction de features**, on conserve toutefois la normalisation
-ImageNet standard (sans égalisation) : ResNet50 a été pré-entraîné sur des
-images naturelles non égalisées, et modifier la distribution des intensités en
-amont dégraderait l'alignement avec le domaine source. L'égalisation est donc
-documentée comme une piste à activer si l'on ré-entraîne un backbone
-spécifiquement sur l'imagerie médicale.
-"""
-        )
-    )
-
-    cells.append(md("## 2. Prétraitement et extraction de features ResNet50"))
-
-    cells.append(
-        md(
-            """
-**Stratégie** :
-
-- Resize à 256, *center crop* à 224×224, normalisation **ImageNet** (mean / std).
-- Backbone **ResNet50** pré-entraîné sur ImageNet, **toutes les couches gelées**
-  (recommandation explicite de l'énoncé : *« geler les couches convolutionnelles »*).
-  ResNet (He et al., 2015) a remporté ImageNet 2015 et reste une référence pour
-  le transfert de features : ses représentations génériques se transfèrent bien
-  à de nouveaux domaines, d'où ce choix.
-- La tête de classification ImageNet est remplacée par `Identity` ; on récupère
-  la sortie du *global average pool* — un vecteur de **2 048 dimensions** par
-  image.
-- Mise en cache au format **Parquet** : la prochaine exécution est instantanée.
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-from mri_semisupervised.features.extractor import extract_features
-
-cfg = FeatureConfig()
-features, index_df = extract_features(records, cfg=cfg, use_cache=True, progress=True)
-print("features.shape :", features.shape)
-print(index_df["split"].value_counts().to_string())
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-# Vérification que les sorties (les embeddings) sont bien exploitables.
-print("Aucun NaN ?      ", not np.isnan(features).any())
-print("Norme moyenne L2 :", float(np.linalg.norm(features, axis=1).mean()))
-print("Variance par dim :", float(features.var(axis=0).mean()))
-"""
-        )
-    )
-
-    cells.append(md("### 2.1 Coût de l'extraction (mémoire et temps)"))
-
-    cells.append(
-        md(
-            """
-On regarde concrètement ce que coûte l'extraction, pour pouvoir raisonner sur
-le passage à l'échelle (4 M d'images) :
-
-- la **mémoire** occupée par la matrice d'embeddings ;
-- le **temps** par image, mesuré sur un petit lot de 32 images.
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-import time
-
-import torch
-from torch.utils.data import DataLoader
-
-from mri_semisupervised.config import device
-from mri_semisupervised.data.preprocess import ImagePathsDataset, build_eval_transform
-from mri_semisupervised.features.extractor import build_backbone
-
-# Empreinte mémoire de la matrice d'embeddings déjà calculée.
-mem_mb = features.nbytes / 1e6
-print(f"Matrice d'embeddings : {features.shape} -> {mem_mb:.1f} Mo en RAM (float32)")
-
-# Petit benchmark de débit : on chronomètre l'extraction sur 32 images.
-sample_paths = [str(r.path) for r in records[:32]]
-ds_bench = ImagePathsDataset(sample_paths, transform=build_eval_transform())
-loader_bench = DataLoader(ds_bench, batch_size=32, shuffle=False)
-
-backbone, _ = build_backbone("resnet50", pretrained=True)
-dev = torch.device(device())
-backbone.to(dev).eval()
-
-start = time.perf_counter()
-with torch.inference_mode():
-    for batch, _ in loader_bench:
-        _ = backbone(batch.to(dev))
-elapsed = time.perf_counter() - start
-
-per_image_ms = elapsed / len(sample_paths) * 1000
-print(f"Extraction : {elapsed:.2f} s pour 32 images -> {per_image_ms:.1f} ms/image ({device()})")
-hours_4m = per_image_ms * 4_000_000 / 1000 / 3600
-print(f"Extrapolation 4 M images : ~{hours_4m:.1f} h sur un seul GPU")
-"""
-        )
-    )
-
-    cells.append(
-        md(
-            """
-**Lecture** : la matrice d'embeddings tient en quelques dizaines de Mo (1 506 ×
-2 048 floats), donc la RAM n'est pas un point bloquant ici. Le temps par image
-mesuré sert de base à l'estimation de coût du passage à l'échelle (slide
-*scaling* de la présentation) : il reste raisonnable et parallélisable sur
-plusieurs GPU. Le cache Parquet garantit en plus qu'on ne paie l'extraction
-**qu'une seule fois**.
-"""
-        )
-    )
-
-    cells.append(md("## 3. Analyse non supervisée"))
-
-    cells.append(
-        md(
-            """
-### 3.1 Standardisation et réduction de dimension
-
-On centre-réduit les 2 048 dimensions, puis on conserve **95 % de la variance**
-via PCA. La PCA accélère le clustering et stabilise t-SNE / UMAP.
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-from mri_semisupervised.models.clustering import reduce_pca, standardise
-
-features_std, scaler = standardise(features)
-features_red, pca = reduce_pca(features_std, target_variance=0.95)
-print(f"Dimensions PCA : {features_red.shape[1]} (variance cumulée ≥ 0.95)")
-print(f"Première composante explique {pca.explained_variance_ratio_[0]:.2%} de la variance")
-"""
-        )
-    )
-
-    cells.append(md("### 3.2 Visualisation 2D (t-SNE / UMAP)"))
-
-    cells.append(
-        code(
-            """
-from mri_semisupervised.viz.plots import plot_2d_scatter, project_2d
-
-labels_for_color = index_df["label_name"].fillna(value="").replace("", None).tolist()
-
-coords_tsne = project_2d(features_red, method="tsne", seed=SEED)
-_ = plot_2d_scatter(
-    coords_tsne,
-    labels=labels_for_color,
-    title="t-SNE des embeddings ResNet50 — colorés par label connu",
-    save_path=FIGURES_DIR / "tsne_labels.png",
-)
-
-coords_umap = project_2d(features_red, method="umap", seed=SEED)
-_ = plot_2d_scatter(
-    coords_umap,
-    labels=labels_for_color,
-    title="UMAP des embeddings ResNet50 — colorés par label connu",
-    save_path=FIGURES_DIR / "umap_labels.png",
-)
-"""
-        )
-    )
-
-    cells.append(md("### 3.3 Comparaison de plusieurs algorithmes de clustering"))
-
-    cells.append(
-        md(
-            """
-On compare volontairement **quatre familles** d'algorithmes, comme le
-recommandent les références classiques du clustering — plutôt que de se fier à
-une seule méthode :
-
-- **centroïdes** : K-Means (Lloyd, 1957) — rapide, baseline incontournable ;
-- **hiérarchique** : Agglomerative (liens *ward* et *average*) ;
-- **probabiliste** : Gaussian Mixture (clusters ellipsoïdaux) ;
-- **densité** : DBSCAN (Ester et al., 1996) — détecte le bruit, ne fixe pas le
-  nombre de clusters a priori.
-
-L'arbitre final est l'**ARI** mesuré sur les 100 images dont on connaît la
-vérité terrain.
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
+**Where the ARI is computed matters.** In the corrected protocol it is computed on the
+*training fold's* labels only, inside the fold. Here, in exploration, it is computed on all
+of them — which is legitimate for looking at the data, and was exactly the mistake when the
+same number was used to *choose* the method that produced the pseudo-labels.
+"""),
+        code("""
+from mri_semisupervised.config import ClusteringConfig, FeatureConfig
+from mri_semisupervised.features.extractor import load_cached_features
 from mri_semisupervised.models.clustering import (
-    align_cluster_labels,
-    assign_weak_labels,
     build_clustering_report,
-    export_weak_labels,
     fit_agglomerative,
     fit_dbscan,
     fit_gmm,
     fit_kmeans,
+    reduce_pca,
+    standardise,
 )
 
-truth = np.where(
-    index_df["split"] == "labeled",
-    index_df["label_name"].map(lambda v: CLASS_TO_INDEX.get(v) if v else np.nan),
-    np.nan,
-).astype(float)
+features, index_df = load_cached_features(FeatureConfig().cache_path)
+truth = index_df["label_index"].to_numpy(dtype=float)
+
+reduced, _ = standardise(features)
+reduced, _ = reduce_pca(reduced, target_variance=ClusteringConfig().pca_variance)
+print(f"{features.shape[1]} dimensions -> {reduced.shape[1]} components at 95% variance")
 
 results = [
-    fit_kmeans(features_red, truth, n_clusters=2, seed=SEED),
-    fit_agglomerative(features_red, truth, n_clusters=2, linkage="ward"),
-    fit_agglomerative(features_red, truth, n_clusters=2, linkage="average"),
-    fit_gmm(features_red, truth, n_components=2, seed=SEED),
-    fit_dbscan(features_red, truth, eps=8.0, min_samples=10),
+    fit_kmeans(reduced, truth, n_clusters=2),
+    fit_agglomerative(reduced, truth, n_clusters=2, linkage="ward"),
+    fit_agglomerative(reduced, truth, n_clusters=2, linkage="average"),
+    fit_gmm(reduced, truth, n_components=2),
+    fit_dbscan(reduced, truth, eps=8.0, min_samples=10),
 ]
+build_clustering_report(results)
+"""),
+        md("""
+### What the table says, and what it does not
 
-report = build_clustering_report(results)
-report
-"""
-        )
-    )
+Read the silhouette column beside the ARI column. `Agglomerative(average)` has the best
+silhouette of the five and an ARI of zero: it found a very tight structure that has nothing
+to do with the diagnosis — one cluster holding almost everything, and one holding a handful
+of outliers.
 
-    cells.append(
-        md(
-            """
-**Lecture** :
+An internal metric measures whether a partition is *neat*. It cannot tell you whether it is
+*the one you wanted*. That is the whole reason the ARI is in the table.
 
-- *Silhouette* (↑) et *Calinski-Harabasz* (↑) mesurent la séparation interne
-  des clusters. *Davies-Bouldin* (↓) la dispersion ; on cherche donc la valeur
-  la plus basse.
-- L'**ARI** est l'arbitre : il compare la partition obtenue à la *vérité
-  terrain* sur les 100 images étiquetées. ARI ∈ [-1, 1] ; 0 = hasard.
-- DBSCAN peut produire un nombre arbitraire de clusters (ou 0). Sur des
-  embeddings 2048d, il est rarement compétitif sans tuning approfondi : on le
-  conserve néanmoins comme baseline pour tracer le résultat.
-"""
-        )
-    )
+DBSCAN, at this eps, declares nearly everything noise. Reported rather than tuned away: a
+method that refuses to split is information about the embedding space.
+"""),
+        code("""
+from mri_semisupervised.viz.plots import plot_2d_scatter, project_2d
 
-    cells.append(
-        md(
-            """
-**Impact des hyperparamètres** — pour vérifier que nos choix ne sont pas
-arbitraires, on fait varier les principaux paramètres et on regarde leur effet
-sur l'ARI :
+best = max((r for r in results if r.ari_vs_truth is not None), key=lambda r: r.ari_vs_truth)
+print(f"best ARI against the labels: {best.name} ({best.ari_vs_truth:.3f})")
 
-- DBSCAN : on balaie le rayon `eps` (à `min_samples` fixé) ;
-- K-Means : on balaie le nombre de clusters `k`.
-"""
-        )
-    )
+coords = project_2d(reduced, method="tsne", seed=42)
+labels = index_df["label_name"].fillna("unlabeled").tolist()
+plot_2d_scatter(coords, labels, title="t-SNE of the ResNet50 embeddings, coloured by label")
+"""),
+        md("""
+## 5. Where this leaves the pseudo-labels
 
-    cells.append(
-        code(
-            """
-# 1) DBSCAN : effet du rayon de voisinage eps (min_samples=10).
-print("DBSCAN — impact de eps (min_samples=10) :")
-dbscan_rows = []
-for eps in [4.0, 6.0, 8.0, 10.0, 12.0]:
-    res = fit_dbscan(features_red, truth, eps=eps, min_samples=10)
-    dbscan_rows.append(
-        {
-            "eps": eps,
-            "n_clusters": res.n_clusters,
-            "ari": res.ari_vs_truth,
-            "noise_ratio": res.extras.get("noise_ratio"),
-        }
-    )
-dbscan_sweep = pd.DataFrame(dbscan_rows)
-print(dbscan_sweep.to_string(index=False))
+The best clustering reaches an ARI around 0.6 against the true labels. That is substantial
+and far from decisive: the pseudo-labels it produces will be right often enough to be worth
+trying, and wrong often enough that the trying has to be measured rather than assumed.
 
-# 2) K-Means : effet du nombre de clusters k.
-print("\\nK-Means — impact de k :")
-kmeans_rows = []
-for k in [2, 3, 4, 5]:
-    res = fit_kmeans(features_red, truth, n_clusters=k, seed=SEED)
-    kmeans_rows.append({"k": k, "ari": res.ari_vs_truth, "silhouette": res.silhouette})
-kmeans_sweep = pd.DataFrame(kmeans_rows)
-print(kmeans_sweep.to_string(index=False))
-"""
-        )
-    )
-
-    cells.append(
-        md(
-            """
-**Lecture** : pour DBSCAN, un `eps` faible (4-6) classe la quasi-totalité des
-points en bruit (aucun cluster formé) ; en augmentant `eps`, un cluster unique
-finit par émerger mais le taux de bruit reste élevé et l'ARI plafonne très bas
-(≤ 0,09). DBSCAN ne parvient donc pas à isoler deux groupes nets sur ces
-embeddings 2048d. Pour K-Means, l'ARI augmente quand `k` grandit (des clusters
-plus fins sont plus homogènes vis-à-vis du label binaire) tandis que la
-silhouette diminue ; mais notre objectif est une labellisation **binaire**
-normal/cancer, donc on conserve `k = 2`, cohérent avec le nombre de classes.
-Ces valeurs restent modestes : c'est l'**Agglomerative (ward)** retenu au §3.4
-(ARI ≈ 0,60) qui sépare le mieux les deux classes.
-"""
-        )
-    )
-
-    cells.append(md("### 3.4 Sélection du meilleur clustering et alignement des labels"))
-
-    cells.append(
-        code(
-            """
-candidates = [r for r in results if r.ari_vs_truth is not None]
-best = max(candidates, key=lambda r: r.ari_vs_truth)
-print(f"Méthode retenue : {best.name}")
-print(f"ARI vs vérité   : {best.ari_vs_truth:.4f}")
-print(f"Silhouette      : {best.silhouette}")
-print(f"Davies-Bouldin  : {best.davies_bouldin}")
-print(f"Calinski-Hara.  : {best.calinski_harabasz}")
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-aligned = align_cluster_labels(best.labels, truth)
-
-# Visualisation des clusters alignés sur la projection t-SNE.
-labels_for_color_aligned = [None if v is None else v for v in (
-    pd.Series(aligned).map({0: "normal", 1: "cancer", -1: "noise"}).tolist()
-)]
-_ = plot_2d_scatter(
-    coords_tsne,
-    labels=labels_for_color_aligned,
-    title=f"Clusters alignés ({best.name}) — projection t-SNE",
-    save_path=FIGURES_DIR / "tsne_clusters_aligned.png",
-)
-"""
-        )
-    )
-
-    cells.append(md("### 3.5 Pseudo-labels « faibles » sur les images non annotées"))
-
-    cells.append(
-        code(
-            """
-weak = assign_weak_labels(index_df, aligned)
-print(f"{len(weak)} pseudo-labels exportables")
-print(weak["weak_label_name"].value_counts())
-
-out = export_weak_labels(weak, ClusteringConfig())
-print(f"\\nExport : {out}")
-"""
-        )
-    )
-
-    cells.append(
-        md(
-            """
-**Vérification de la séparation des jeux** : `weak` ne contient **que** des
-images du split `unlabeled` ; aucune image fortement labellisée n'apparaît.
-La règle métier *« ne jamais mélanger faible et fort »* est respectée.
-"""
-        )
-    )
-
-    cells.append(md("## 4. Synthèse"))
-
-    cells.append(
-        md(
-            """
-- Inventaire propre du dataset (modes, résolutions, intégrité, outliers).
-- Embeddings ResNet50 calculés et mis en cache → réutilisables sans recalcul.
-- Quatre algorithmes de clustering comparés (K-Means, Agglomerative ×2, GMM,
-  DBSCAN). La méthode retenue est celle qui maximise l'ARI face aux 100 labels
-  forts.
-- Les pseudo-labels « faibles » sont exportés vers
-  `data/processed/weak_labels.csv` ; ils alimentent le **notebook 02** où l'on
-  entraîne et compare un CNN supervisé pur vs un CNN semi-supervisé.
-
-L'analyse pour le **passage à l'échelle (4 M images / 5 000 €)** est traitée
-dans le support de présentation.
-"""
-        )
-    )
-
-    return cells
+Notebook 02 measures it — under a protocol where the test fold takes part in no decision,
+and against a control that receives the same images with their pseudo-labels shuffled.
+"""),
+    ]
 
 
-def build_notebook_two() -> list[nbf.NotebookNode]:
-    cells: list[nbf.NotebookNode] = []
+# --------------------------------------------------------------------------- #
+# 02 — the protocol
+# --------------------------------------------------------------------------- #
+def build_protocol_notebook() -> list[nbf.NotebookNode]:
+    return [
+        md("""
+# 02 — The protocol, and what it says
 
-    cells.append(
-        md(
-            """
-# 02 — Approche semi-supervisée et comparaison avec une baseline supervisée
+The first version of this comparison concluded that the semi-supervised arm improved recall
+on the cancer class, 0.900 to 0.960. Three leaks stood behind that number, all of them
+pushing the same way:
 
-**Mission BrainScanAI — *CurelyticsIA*** &nbsp;·&nbsp; *Option B*
+1. **31 of the 99 evaluation images were in the pre-training pool** (notebook 01);
+2. the **clustering method** was chosen by ARI against every label, test folds included;
+3. the **cluster-to-class alignment** was decided by a vote over those same labels.
 
-Ce second notebook met en œuvre l'**étape 4** de la mission :
+And a confound: the semi-supervised arm took strictly more gradient steps than its baseline.
 
-1. Charger les pseudo-labels faibles (issus du clustering du notebook 01) et
-   les 100 labels forts (sans jamais mélanger les deux jeux).
-2. Réaliser un split *train / test* stratifié sur les labels forts (le test set
-   restera **strictement inconnu** des deux modèles).
-3. Entraîner :
-   - une **baseline supervisée pure** (ResNet18 + tête 2 classes, fine-tuné
-     uniquement sur les 80 images fortement labellisées du train) ;
-   - une **approche semi-supervisée** (même architecture, pré-entraînée sur les
-     ~1 400 pseudo-labels faibles, puis fine-tunée sur les mêmes 80 images).
-4. Comparer les performances : accuracy, macro-F1, **recall de la classe
-   *cancer*** (priorité métier), précision, ROC AUC, matrice de confusion.
-5. Conclusion / *Definition of Done*.
-"""
-        )
-    )
+This notebook reads the artefacts of the corrected protocol. It is not there to defend a
+conclusion — it is there to report one.
+"""),
+        code(PREAMBLE),
+        md("""
+## 1. What the corrected protocol does differently
 
-    cells.append(md("## 0. Imports & configuration"))
+* Duplicates are removed **by content**, and the evaluation set never loses an image.
+* The clustering, the choice of method and the alignment happen **inside the training
+  fold**. The test fold takes part in no decision.
+* Three arms share folds, architecture and starting weights:
 
-    cells.append(
-        code(
-            """
-from __future__ import annotations
+| arm | pre-training | what it isolates |
+|---|---|---|
+| `supervised` | none | the reference |
+| `semi_supervised` | the fold's pseudo-labels | the supposed contribution |
+| `permuted_control` | the same images, labels shuffled | budget and exposure |
 
+* The checkpoint and the decision threshold come from an inner validation split carved out
+  of the training fold.
+* Five repeats of a five-fold cross-validation, so the spread is measured rather than
+  guessed.
+
+The third arm is the one that can end the discussion. It sees the same images and takes the
+same steps; only the pairing between image and pseudo-label is destroyed.
+"""),
+        code("""
 import json
-import sys
-from pathlib import Path
 
-import numpy as np
-import pandas as pd
-from sklearn.model_selection import train_test_split
+from mri_semisupervised.config import EXPERIMENTS_DIR
 
-ROOT = Path.cwd().parent if Path.cwd().name == "notebooks" else Path.cwd()
-sys.path.insert(0, str(ROOT / "src"))
+runs = sorted(p for p in EXPERIMENTS_DIR.iterdir() if p.is_dir())
+corrected = [p for p in runs if p.name.startswith("corrected")][-1]
+print(f"reading {corrected.name}")
 
-from mri_semisupervised.config import (  # noqa: E402
-    CLASS_TO_INDEX,
-    CLASSES,
-    ClusteringConfig,
-    FIGURES_DIR,
-    FeatureConfig,
-    PROCESSED_DIR,
-    SEED,
-    TrainingConfig,
-    ensure_dirs,
-    set_global_seeds,
-)
-from mri_semisupervised.features.extractor import load_cached_features  # noqa: E402
-from mri_semisupervised.viz.plots import (  # noqa: E402
-    plot_confusion_matrix,
-    plot_history,
-    plot_metrics_bar,
-)
+meta = json.loads((corrected / "manifest.json").read_text(encoding="utf-8"))
+print(f"dataset fingerprint : {meta['dataset_fingerprint']}")
+print(f"evaluation images   : {meta['evaluation_images']}")
+print(f"unlabelled pool     : {meta['unlabelled_pool']}")
+print(f"folds               : {meta['protocol']['n_splits']} x {meta['protocol']['n_repeats']} repeats")
+print(f"gpu                 : {meta['versions']['gpu']}")
 
-ensure_dirs()
-set_global_seeds(SEED)
-print("Classes :", CLASSES, "→", CLASS_TO_INDEX)
-"""
-        )
-    )
+per_fold = pd.read_parquet(corrected / "per_fold.parquet")
+predictions = pd.read_parquet(corrected / "predictions.parquet")
+folds = pd.read_parquet(corrected / "folds.parquet")
+"""),
+        md("""
+## 2. The three arms, side by side
 
-    cells.append(md("## 1. Chargement des features et des labels"))
+Two families of number, and they answer different questions. **ROC AUC and PR-AUC** say how
+well the scores rank, whatever threshold is applied. **Recall and F1** say what happens at
+the threshold that was actually chosen — on the inner validation, never on the test fold.
 
-    cells.append(
-        code(
-            """
-features, index_df = load_cached_features(FeatureConfig().cache_path)
-weak = pd.read_csv(ClusteringConfig().weak_labels_path)
-print(f"features            : {features.shape}")
-print(f"index_df            : {index_df.shape}")
-print(f"pseudo-labels faibles : {len(weak)}")
+The original comparison reported only the second kind, which is how a model whose ranking
+had got *worse* came to look better.
+"""),
+        code("""
+headline = ["roc_auc", "pr_auc", "recall_positive", "f1_macro", "accuracy"]
+per_fold.groupby("arm")[headline].agg(["mean", "std"]).round(3)
+"""),
+        md("""
+## 3. Paired comparisons
 
-labeled_df = index_df[index_df["split"] == "labeled"].copy()
-labeled_df["label_index"] = labeled_df["label_name"].map(CLASS_TO_INDEX).astype(int)
-print("\\nDistribution labels forts :")
-print(labeled_df["label_name"].value_counts())
-"""
-        )
-    )
+The arms share their folds, so the comparison is paired. Treating the two as independent
+samples would throw the pairing away and widen every interval for nothing.
+"""),
+        code("""
+from mri_semisupervised.protocol.uncertainty import paired_difference
 
-    cells.append(md("### 1.1 Garde-fous : aucun chevauchement entre faibles et forts"))
-
-    cells.append(
-        code(
-            """
-strong_ids = set(labeled_df["image_id"])
-weak_ids = set(weak["image_id"])
-overlap = strong_ids & weak_ids
-assert not overlap, f"Chevauchement détecté : {overlap}"
-print("OK — pas de chevauchement entre labels forts et faibles")
-"""
-        )
-    )
-
-    cells.append(md("## 2. Évaluation 5-fold stratifiée"))
-
-    cells.append(
-        md(
-            """
-Avec seulement 100 IRM fortement labellisées, un unique split train/test laisse
-trop de variance d'estimation. On préfère une **5-fold stratifiée** : à chaque
-fold, 50 IRM sont en train et 50 en test (jamais vues), avec ratio 1:1 cancer
-/ normal préservé. Les deux stratégies (sup. pur, semi-sup.) sont évaluées sur
-les **mêmes folds**, mêmes hyperparamètres, mêmes graines.
-
-Pourquoi 50/50 plutôt que 80/20 ?
-
-* Garder un test set substantiel (50 IRM) réduit la variance d'estimation.
-* Avec 80/20, ResNet18 pré-entraîné ImageNet sature trop vite (perfect score
-  sur 20 IRM) ; la comparaison perd en pouvoir discriminant.
-* Le total `5 folds × 50 test = 250 prédictions` (avec *overlap*) reste
-  pragmatique pour une mission exploratoire de R&D.
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-from mri_semisupervised.models.semi_supervised import (
-    aggregate_reports,
-    cross_validate,
-    train_semi_supervised,
-    train_supervised,
-)
-
-cfg = TrainingConfig()
-print("Hyperparamètres :", cfg)
-
-print(f"\\nStrong : {len(labeled_df)} | Weak : {len(weak)} | Folds : {cfg.cv_folds}")
-"""
-        )
-    )
-
-    cells.append(md("## 3. Lancement de la cross-validation"))
-
-    cells.append(
-        md(
-            """
-Chaque fold lance :
-
-1. **Stratégie A — supervisée pure** : ResNet18 pré-entraîné ImageNet,
-   ré-entraîné de bout en bout sur 50 IRM fortement labellisées.
-2. **Stratégie B — semi-supervisée** : même architecture, **pré-entraînée**
-   sur les ~1 400 pseudo-labels faibles puis **fine-tunée** sur les mêmes 50
-   IRM avec un *learning rate* divisé par deux.
-
-Les deux stratégies sont évaluées sur les **mêmes** 50 IRM jamais vues.
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-reports = cross_validate(
-    strong_paths=labeled_df["path"].tolist(),
-    strong_labels=labeled_df["label_index"].tolist(),
-    weak_paths=weak["path"].tolist(),
-    weak_labels=weak["weak_label_index"].astype(int).tolist(),
-    class_names=list(CLASSES),
-    cfg=cfg,
-    seed=SEED,
-)
-
-agg_sup = aggregate_reports(reports["supervised"])
-agg_semi = aggregate_reports(reports["semi_supervised"])
-"""
-        )
-    )
-
-    cells.append(md("## 4. Comparaison des deux stratégies"))
-
-    cells.append(
-        code(
-            """
-def to_summary(agg: dict[str, dict[str, float]]) -> dict[str, str]:
-    out = {}
-    for metric, vals in agg.items():
-        if vals["std"] > 1e-6:
-            out[metric] = f"{vals['mean']:.3f} ± {vals['std']:.3f}"
-        else:
-            out[metric] = f"{vals['mean']:.3f}"
-    return out
-
-comparison = pd.DataFrame({
-    "Supervisé pur": to_summary(agg_sup),
-    "Semi-supervisé": to_summary(agg_semi),
-})
-comparison
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-runs = {
-    "Supervisé pur": {k: v["mean"] for k, v in agg_sup.items()},
-    "Semi-supervisé": {k: v["mean"] for k, v in agg_semi.items()},
-}
-_ = plot_metrics_bar(
-    runs,
-    metric_name="f1_macro",
-    title="Macro-F1 — Supervisé vs Semi-supervisé (CV mean)",
-    save_path=FIGURES_DIR / "compare_f1.png",
-)
-_ = plot_metrics_bar(
-    runs,
-    metric_name="recall_cancer",
-    title="Rappel sur la classe cancer (priorité métier, CV mean)",
-    save_path=FIGURES_DIR / "compare_recall_cancer.png",
-)
-"""
-        )
-    )
-
-    cells.append(md("### 4.1 Matrices de confusion (somme sur les 5 folds)"))
-
-    cells.append(
-        code(
-            """
-def stack_cm(reports_list):
-    return np.sum([np.array(r.confusion_matrix) for r in reports_list], axis=0).tolist()
-
-cm_sup = stack_cm(reports["supervised"])
-cm_semi = stack_cm(reports["semi_supervised"])
-
-_ = plot_confusion_matrix(
-    cm_sup,
-    class_names=list(CLASSES),
-    title="Confusion (cumul 5 folds) — Supervisé pur",
-    save_path=FIGURES_DIR / "cm_supervised.png",
-)
-_ = plot_confusion_matrix(
-    cm_semi,
-    class_names=list(CLASSES),
-    title="Confusion (cumul 5 folds) — Semi-supervisé",
-    save_path=FIGURES_DIR / "cm_semi.png",
-)
-"""
-        )
-    )
-
-    cells.append(md("### 4.2 Historique d'entraînement (un fold représentatif)"))
-
-    cells.append(
-        code(
-            """
-def history_to_df(report, label: str) -> pd.DataFrame:
-    rows = []
-    for i, log in enumerate(report.history, start=1):
-        rows.append({
-            "step": i,
-            "phase": f"{label}/{log.phase}",
-            "train_loss": log.train_loss,
-            "train_acc": log.train_acc,
-        })
-    return pd.DataFrame(rows)
-
-hist_df = pd.concat([
-    history_to_df(reports["supervised"][0], "supervised"),
-    history_to_df(reports["semi_supervised"][0], "semi-supervised"),
-], ignore_index=True)
-
-_ = plot_history(hist_df, save_path=FIGURES_DIR / "training_history.png")
-hist_df.tail(10)
-"""
-        )
-    )
-
-    cells.append(md("### 4.3 Courbes ROC"))
-
-    cells.append(
-        md(
-            """
-La courbe ROC montre le compromis entre vrais positifs et faux positifs quand
-on fait varier le seuil de décision. On cumule les probabilités prédites sur
-les 5 folds pour chaque stratégie, puis on trace les deux courbes sur le même
-graphique (l'aire sous la courbe, l'AUC, est rappelée dans la légende).
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
+pivot = per_fold.pivot(index="fold", columns="arm")
+rows = []
+for metric in ["roc_auc", "pr_auc", "recall_positive"]:
+    for a, b in [
+        ("semi_supervised", "supervised"),
+        ("semi_supervised", "permuted_control"),
+        ("permuted_control", "supervised"),
+    ]:
+        out = paired_difference(pivot[(metric, a)].to_numpy(), pivot[(metric, b)].to_numpy())
+        rows.append({"metric": metric, "comparison": f"{a} - {b}", **out})
+pd.DataFrame(rows).round(4)
+"""),
+        md("""
+The line to read first is `semi_supervised - permuted_control`. If its interval spans zero,
+then pre-training on pseudo-labels does no better than pre-training on the same images with
+those labels shuffled — and whatever the first version measured was budget and exposure, not
+the information the clustering had found.
+"""),
+        code("""
 from mri_semisupervised.viz.plots import plot_roc_compare
 
-
-def pool_scores(reports_list):
-    y_true = []
-    y_score = []
-    for r in reports_list:
-        y_true.extend(r.y_true)
-        y_score.extend(r.y_score)
-    return np.array(y_true), np.array(y_score)
-
-
 curves = {
-    "Supervisé pur": pool_scores(reports["supervised"]),
-    "Semi-supervisé": pool_scores(reports["semi_supervised"]),
+    arm: (group["y_true"].to_numpy(), group["y_score"].to_numpy())
+    for arm, group in predictions.groupby("arm")
 }
-_ = plot_roc_compare(
-    curves,
-    title="Courbes ROC — probas cumulées sur les 5 folds",
-    save_path=FIGURES_DIR / "roc_curve.png",
-)
-"""
-        )
+plot_roc_compare(curves, title="Pooled out-of-fold ROC, five repeats")
+"""),
+        md("""
+## 4. Which clustering method each fold picked
+
+Choosing the method inside the fold means the choice can differ from one fold to the next.
+That is not instability to hide — it is a measurement of how much the choice depended on
+seeing every label.
+"""),
+        code("""
+print(folds["pseudo_method"].value_counts().to_string())
+print()
+print(f"ARI on the training labels: {folds['pseudo_ari_on_train'].mean():.3f} "
+      f"+/- {folds['pseudo_ari_on_train'].std():.3f}")
+print(f"pseudo-labels per fold    : {folds['n_pseudo'].mean():.0f}")
+"""),
+        md("""
+## 5. What the leaks were worth
+
+The `legacy` run reproduces the original protocol faithfully — duplicates left in place,
+method and alignment decided once over every label, checkpoint taken on training accuracy.
+It exists so the difference is **measured** rather than quoted from an old file.
+"""),
+        code("""
+legacy_runs = [p for p in runs if p.name.startswith("legacy")]
+if legacy_runs:
+    legacy = pd.read_parquet(legacy_runs[-1] / "per_fold.parquet")
+    comparison = pd.concat(
+        [
+            per_fold.groupby("arm")[headline].mean().add_suffix("_corrected"),
+            legacy.groupby("arm")[headline].mean().add_suffix("_legacy"),
+        ],
+        axis=1,
     )
+    display(comparison.round(3))
+else:
+    print("no legacy run found: uv run python scripts/run_experiment.py --mode legacy")
+"""),
+        md("""
+## 6. What to take away
 
-    cells.append(
-        md(
-            """
-**Interprétation** : plus une courbe se rapproche du coin supérieur gauche,
-meilleur est le classifieur. Les deux stratégies obtiennent une AUC élevée
-(features ResNet très séparables) ; on compare surtout leur comportement dans
-la zone à faible taux de faux positifs, la plus pertinente en e-santé où l'on
-veut manquer le moins de cancers possible.
-"""
-        )
-    )
+Whatever the numbers above say, the method is the point:
 
-    cells.append(md("## 5. Discussion : justification de l'approche semi-supervisée"))
+* an identity that comes from the data, so a duplicate cannot hide behind a folder;
+* every decision that reads a label made inside the training fold;
+* a control arm that makes "it helped" a falsifiable claim rather than a hopeful one;
+* intervals, because with twenty images per fold a difference of one image moves recall by
+  0.05.
 
-    cells.append(
-        md(
-            """
-**Pourquoi la semi-supervision est-elle pertinente ici ?**
-
-1. Le coût d'annotation médicale est **élevé** (radiologues experts, temps,
-   responsabilité). Le budget *labellisation IA* est de **300 €** sur ce
-   dataset et ne permettra pas d'annoter manuellement 1 500 IRM
-   supplémentaires.
-2. Les 1 400 images non annotées **portent de l'information** sur la structure
-   visuelle des IRM (forme du crâne, position cérébrale, contraste type IRM).
-   Le pré-entraînement sur les pseudo-labels stabilise la représentation et
-   réduit le sur-apprentissage de la baseline 100 % supervisée sur seulement
-   80 images d'entraînement.
-3. La comparaison directe (mêmes données de test, même architecture, même
-   *seed*) montre l'apport — ou ses limites — de l'approche.
-
-**Hyperparamètres ajustés** :
-
-- *learning rate* (1e-4 sur la phase fortement labellisée, divisé par 2 lors du
-  fine-tuning pour préserver le pré-entraînement) ;
-- nombre d'époques (3 en pré-entraînement faible, 6 en fine-tuning fort) ;
-- *batch size* à 16 (compromis sur des images 224×224 en CPU).
-
-**Erreur la plus coûteuse** : un **faux négatif sur cancer** (manquer une
-tumeur) coûte plus cher qu'un faux positif (re-vérifier une IRM saine). Les
-métriques mises en avant sont donc **`recall_cancer`** puis **`f1_cancer`**,
-plutôt que l'accuracy globale qui peut masquer un déséquilibre de classes.
-"""
-        )
-    )
-
-    cells.append(md("## 6. Bonus — Comparaison avec sklearn `LabelPropagation`"))
-
-    cells.append(
-        md(
-            """
-La consigne suggère également les méthodes basées sur les graphes
-(*label propagation*). On s'en sert ici comme **second avis** sur les features
-ResNet déjà extraites — sans avoir à réentraîner un CNN. On évalue
-LabelPropagation par 5-fold stratifiée pour comparer ses scores aux deux
-stratégies CNN précédentes.
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-from sklearn.metrics import accuracy_score, f1_score, recall_score
-from sklearn.model_selection import StratifiedKFold
-from sklearn.preprocessing import StandardScaler
-from sklearn.semi_supervised import LabelPropagation
-
-X = StandardScaler().fit_transform(features)
-labeled_mask = (index_df["split"] == "labeled").to_numpy()
-labeled_idx = np.where(labeled_mask)[0]
-strong_labels_full = labeled_df.loc[labeled_idx, "label_index"].values
-
-skf = StratifiedKFold(n_splits=cfg.cv_folds, shuffle=True, random_state=SEED)
-lp_acc, lp_f1, lp_recall = [], [], []
-for _fold, (train_pos, test_pos) in enumerate(
-    skf.split(np.zeros_like(strong_labels_full), strong_labels_full),
-    start=1,
-):
-    train_ids = labeled_idx[train_pos]
-    test_ids = labeled_idx[test_pos]
-    semi_truth = np.full(len(X), -1, dtype=int)
-    semi_truth[train_ids] = strong_labels_full[train_pos]
-    lp = LabelPropagation(kernel="knn", n_neighbors=10, max_iter=200)
-    lp.fit(X, semi_truth)
-    y_true = strong_labels_full[test_pos]
-    y_pred = lp.transduction_[test_ids]
-    lp_acc.append(accuracy_score(y_true, y_pred))
-    lp_f1.append(f1_score(y_true, y_pred, average="macro"))
-    lp_recall.append(
-        recall_score(y_true, y_pred, pos_label=CLASS_TO_INDEX["cancer"], zero_division=0)
-    )
-
-print(f"LabelPropagation accuracy        : {np.mean(lp_acc):.3f} ± {np.std(lp_acc):.3f}")
-print(f"LabelPropagation macro F1        : {np.mean(lp_f1):.3f} ± {np.std(lp_f1):.3f}")
-print(f"LabelPropagation recall cancer   : {np.mean(lp_recall):.3f} ± {np.std(lp_recall):.3f}")
-"""
-        )
-    )
-
-    cells.append(
-        md(
-            """
-**Lecture** : LabelPropagation, basé sur un graphe k-NN sur les features
-ResNet, est très peu coûteux (pas de fine-tuning) et constitue une **baseline
-légère** pertinente pour des budgets contraints. Le CNN semi-supervisé reste
-généralement plus précis car il ré-apprend les couches du backbone.
-"""
-        )
-    )
-
-    cells.append(md("## 7. *Definition of Done*"))
-
-    cells.append(
-        code(
-            """
-done_table = pd.DataFrame(
-    [
-        ("ARI clustering vs labels forts ≥ 0.10", "voir notebook 01"),
-        (
-            "F1 macro semi-sup ≥ F1 macro supervisé",
-            f"semi={agg_semi['f1_macro']['mean']:.3f} ± {agg_semi['f1_macro']['std']:.3f}"
-            f" ; sup={agg_sup['f1_macro']['mean']:.3f} ± {agg_sup['f1_macro']['std']:.3f}",
-        ),
-        (
-            "Recall cancer ≥ 0.90",
-            f"semi={agg_semi['recall_cancer']['mean']:.3f} ± {agg_semi['recall_cancer']['std']:.3f}"
-            f" ; sup={agg_sup['recall_cancer']['mean']:.3f} ± {agg_sup['recall_cancer']['std']:.3f}",
-        ),
-        ("Tests pytest verts", "voir QA"),
-        ("Notebooks ré-exécutables", "uv run jupyter nbconvert --execute"),
-    ],
-    columns=["Critère", "Valeur observée"],
-)
-done_table
-"""
-        )
-    )
-
-    cells.append(
-        code(
-            """
-# Sauvegarde du rapport JSON consommé par le support de présentation.
-out = {
-    "supervised": agg_sup,
-    "semi_supervised": agg_semi,
-    "training_config": dict(cfg.__dict__),
-}
-out_path = PROCESSED_DIR / "training_report.json"
-out_path.write_text(
-    json.dumps(out, indent=2, default=lambda o: float(o) if isinstance(o, np.floating) else o),
-    encoding="utf-8",
-)
-print(f"Rapport sauvegardé : {out_path}")
-"""
-        )
-    )
-
-    cells.append(
-        md(
-            """
-**Conclusion**
-
-- L'approche semi-supervisée s'appuie sur les pseudo-labels issus du
-  clustering pour exploiter les 1 400 IRM non annotées sans coût d'annotation
-  supplémentaire.
-- La comparaison directe avec la baseline supervisée pure (mêmes données,
-  même test) permet de quantifier le gain.
-- Les recommandations pour le passage à l'échelle (4 M d'images, 5 000 €) sont
-  détaillées dans le support de présentation : faisabilité, choix techniques
-  (batch GPU, infrastructure, *active learning*), risques et conditions.
-"""
-        )
-    )
-
-    return cells
+A protocol that can only confirm what you hoped is not a protocol.
+"""),
+    ]
 
 
 def main() -> None:
-    write_notebook(
-        NOTEBOOKS_DIR / "01_exploration_features_clustering.ipynb",
-        build_notebook_one(),
-    )
-    write_notebook(
-        NOTEBOOKS_DIR / "02_semi_supervised.ipynb",
-        build_notebook_two(),
-    )
+    write_notebook(NOTEBOOKS_DIR / "01_dataset_and_clustering.ipynb", build_dataset_notebook())
+    write_notebook(NOTEBOOKS_DIR / "02_protocol_and_results.ipynb", build_protocol_notebook())
 
 
 if __name__ == "__main__":
-    sys.exit(main() or 0)
+    main()
