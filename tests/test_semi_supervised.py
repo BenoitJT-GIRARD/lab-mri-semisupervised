@@ -1,4 +1,4 @@
-"""Tests pour ``curelyticsia.models.semi_supervised``."""
+"""Tests pour ``mri_semisupervised.models.semi_supervised``."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ if importlib.util.find_spec("torch") is None:  # pragma: no cover
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from curelyticsia.config import set_global_seeds
-from curelyticsia.models.semi_supervised import build_classifier, evaluate
+from mri_semisupervised.config import set_global_seeds
+from mri_semisupervised.models.semi_supervised import build_classifier, evaluate
 
 
 def test_build_classifier_output_shape() -> None:

@@ -1,4 +1,4 @@
-"""Tests pour ``curelyticsia.data.loader``."""
+"""Tests pour ``mri_semisupervised.data.loader``."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from curelyticsia.data.loader import (
+from mri_semisupervised.data.loader import (
     compute_pixel_stats,
     detect_outlier_ids,
     discover_images,

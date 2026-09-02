@@ -17,9 +17,9 @@ from torch.utils.data import DataLoader
 from torchvision import models
 from tqdm.auto import tqdm
 
-from curelyticsia.config import FeatureConfig, device
-from curelyticsia.data.loader import ImageRecord
-from curelyticsia.data.preprocess import ImagePathsDataset, build_eval_transform
+from mri_semisupervised.config import FeatureConfig, device
+from mri_semisupervised.data.loader import ImageRecord
+from mri_semisupervised.data.preprocess import ImagePathsDataset, build_eval_transform
 
 
 def build_backbone(name: str = "resnet50", pretrained: bool = True) -> tuple[nn.Module, int]:

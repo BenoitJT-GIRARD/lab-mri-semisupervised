@@ -1,4 +1,4 @@
-"""Tests pour ``curelyticsia.data.preprocess``."""
+"""Tests pour ``mri_semisupervised.data.preprocess``."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from PIL import Image
 if importlib.util.find_spec("torch") is None:  # pragma: no cover
     pytest.skip("torch indisponible", allow_module_level=True)
 
-from curelyticsia.data.preprocess import (
+from mri_semisupervised.data.preprocess import (
     ImagePathsDataset,
     build_eval_transform,
     build_train_transform,

@@ -1,11 +1,11 @@
-"""Tests pour ``curelyticsia.models.clustering``."""
+"""Tests pour ``mri_semisupervised.models.clustering``."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from curelyticsia.models.clustering import (
+from mri_semisupervised.models.clustering import (
     align_cluster_labels,
     assign_weak_labels,
     build_clustering_report,

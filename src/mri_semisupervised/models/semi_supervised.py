@@ -31,8 +31,8 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import models
 
-from curelyticsia.config import TrainingConfig, device
-from curelyticsia.data.preprocess import (
+from mri_semisupervised.config import TrainingConfig, device
+from mri_semisupervised.data.preprocess import (
     ImagePathsDataset,
     build_eval_transform,
     build_train_transform,

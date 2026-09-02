@@ -22,7 +22,7 @@ from sklearn.metrics import (
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
-from curelyticsia.config import ClusteringConfig
+from mri_semisupervised.config import ClusteringConfig
 
 
 @dataclass(frozen=True)

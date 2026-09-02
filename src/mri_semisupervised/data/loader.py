@@ -6,7 +6,6 @@ PyTorch pour l'exploration initiale.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,12 +14,13 @@ import numpy as np
 import pandas as pd
 from PIL import Image, ImageFile, UnidentifiedImageError
 
-from curelyticsia.config import (
+from mri_semisupervised.config import (
     CLASS_TO_INDEX,
     DATASET_ROOT,
     LABELED_DIR,
     UNLABELED_DIR,
 )
+from mri_semisupervised.data.manifest import content_id
 
 # Tolère les images JPEG légèrement tronquées (sans masquer une corruption).
 ImageFile.LOAD_TRUNCATED_IMAGES = False
@@ -44,8 +44,13 @@ class ImageRecord:
 
 
 def _safe_hash(path: Path) -> str:
-    """Hash MD5 court d'un chemin (id stable même si l'utilisateur renomme)."""
-    return hashlib.md5(str(path).encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
+    """Identify an image by its content.
+
+    This used to hash the path, which meant two copies of one scan in two folders received
+    two identifiers — and the guard that kept the labelled images out of the unlabelled
+    pool never fired. See :mod:`mri_semisupervised.data.manifest`.
+    """
+    return content_id(path)
 
 
 def _iter_image_paths(directory: Path) -> Iterable[Path]:
@@ -213,7 +218,7 @@ def summarise_dataset(records: list[ImageRecord]) -> dict[str, object]:
     """Résumé textuel : compteurs par split / classe, résolutions, modes."""
     df = records_to_dataframe(records)
     summary: dict[str, object] = {
-        "total": int(len(df)),
+        "total": len(df),
         "by_split": df.groupby("split", dropna=False).size().to_dict(),
         "by_label": df.groupby("label_name", dropna=False).size().to_dict(),
         "modes": df["mode"].value_counts().to_dict(),
@@ -223,10 +228,10 @@ def summarise_dataset(records: list[ImageRecord]) -> dict[str, object]:
 
 
 __all__ = [
-    "ImageRecord",
     "LABELED_DIR",
     "UNLABELED_DIR",
     "VALID_EXTENSIONS",
+    "ImageRecord",
     "compute_pixel_stats",
     "detect_outlier_ids",
     "discover_images",

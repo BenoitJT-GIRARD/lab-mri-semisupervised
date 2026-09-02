@@ -1,8 +1,8 @@
-"""Tests pour ``curelyticsia.config``."""
+"""Tests pour ``mri_semisupervised.config``."""
 
 from __future__ import annotations
 
-from curelyticsia import config
+from mri_semisupervised import config
 
 
 def test_class_index_consistent() -> None:

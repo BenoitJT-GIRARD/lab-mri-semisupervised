@@ -19,7 +19,7 @@ from PIL import Image, ImageOps
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-from curelyticsia.config import IMAGENET_MEAN, IMAGENET_STD, INPUT_SIZE
+from mri_semisupervised.config import IMAGENET_MEAN, IMAGENET_STD, INPUT_SIZE
 
 
 def equalize_image(image: Image.Image) -> Image.Image:
