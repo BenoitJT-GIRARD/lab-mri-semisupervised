@@ -350,7 +350,7 @@ nvtx = [
 ]
 
 [[package]]
-name = "curelyticsia"
+name = "mri_semisupervised"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

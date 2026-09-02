@@ -131,6 +131,7 @@ def fit_pseudo_labels(
     unlabelled_ids: np.ndarray,
     train_ids: np.ndarray,
     train_labels: np.ndarray,
+    *,
     seed: int = 42,
     cfg: ClusteringConfig | None = None,
 ) -> PseudoLabelSet:

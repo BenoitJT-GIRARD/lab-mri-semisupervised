@@ -26,6 +26,7 @@ sns.set_theme(context="notebook", style="whitegrid")
 def plot_image_grid(
     paths: Iterable[str | Path],
     titles: Iterable[str] | None = None,
+    *,
     cols: int = 5,
     figsize_per_cell: tuple[float, float] = (2.4, 2.4),
     cmap: str = "gray",
@@ -111,6 +112,7 @@ def plot_equalization(
 def project_2d(
     features: np.ndarray,
     method: str = "tsne",
+    *,
     seed: int = 42,
     perplexity: float = 30.0,
     n_neighbors: int = 15,

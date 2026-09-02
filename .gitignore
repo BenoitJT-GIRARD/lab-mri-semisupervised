@@ -81,8 +81,7 @@ logs/
 *.toc
 *.out
 
-# --- Editor and assistant working folders ---
-.claude/
+# --- Editor working folders ---
 .idea/
 .vscode/
 

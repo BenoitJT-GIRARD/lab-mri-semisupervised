@@ -131,6 +131,7 @@ def _pretrain(
     model: nn.Module,
     pseudo: PseudoLabelSet,
     paths_by_id: dict[str, Path],
+    *,
     cfg: TrainingConfig,
     dev: torch.device,
     seed: int,
@@ -181,7 +182,7 @@ def run_arm(
     if arm in (SEMI_SUPERVISED, PERMUTED_CONTROL):
         used = pseudo if arm == SEMI_SUPERVISED else permute(pseudo, seed)
         pretrain_ids = tuple(used.image_ids.tolist())
-        pretrain_steps, history = _pretrain(model, used, paths_by_id, cfg, dev, seed)
+        pretrain_steps, history = _pretrain(model, used, paths_by_id, cfg=cfg, dev=dev, seed=seed)
 
     train_loader = _loader(
         [paths_by_id[i] for i, _ in inner_train],

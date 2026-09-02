@@ -13,7 +13,7 @@ CurelyticsIA/
 │   ├── raw/                 # dataset extrait (ignoré par git)
 │   ├── interim/
 │   └── processed/           # features.parquet, weak_labels.csv (ignoré)
-├── src/curelyticsia/        # package Python
+├── src/mri_semisupervised/        # package Python
 │   ├── config.py            # paths, seeds, hyperparamètres
 │   ├── data/loader.py       # discovery, intégrité, métadonnées
 │   ├── data/preprocess.py   # transforms ImageNet
@@ -42,7 +42,7 @@ CurelyticsIA/
 
 ```powershell
 uv sync --extra dev
-uv run python -m ipykernel install --user --name curelyticsia --display-name "Python (curelyticsia)"
+uv run python -m ipykernel install --user --name mri_semisupervised --display-name "Python (mri_semisupervised)"
 ```
 
 ## Pipeline reproductible

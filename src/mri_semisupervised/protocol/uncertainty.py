@@ -26,6 +26,7 @@ def bootstrap_ci(
     y_true: np.ndarray,
     y_score: np.ndarray,
     metric: Callable[[np.ndarray, np.ndarray], float],
+    *,
     n_boot: int = 2000,
     seed: int = 42,
     alpha: float = 0.05,
@@ -53,6 +54,7 @@ def bootstrap_ci(
 def paired_difference(
     per_fold_a: np.ndarray,
     per_fold_b: np.ndarray,
+    *,
     n_boot: int = 2000,
     seed: int = 42,
     alpha: float = 0.05,
