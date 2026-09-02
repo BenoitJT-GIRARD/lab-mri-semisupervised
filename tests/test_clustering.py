@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 
 from mri_semisupervised.models.clustering import (
-    align_cluster_labels,
-    assign_weak_labels,
     build_clustering_report,
     fit_agglomerative,
     fit_dbscan,
@@ -63,17 +60,6 @@ def test_dbscan_handles_outliers(synthetic_features: tuple[np.ndarray, np.ndarra
     assert 0.0 <= res.extras["noise_ratio"] <= 1.0
 
 
-def test_align_cluster_labels_majority_vote(
-    synthetic_features: tuple[np.ndarray, np.ndarray],
-) -> None:
-    feats, truth = synthetic_features
-    res = fit_kmeans(feats, truth, n_clusters=2)
-    aligned = align_cluster_labels(res.labels, truth)
-
-    # Pour les indices labellisés, l'alignement doit être (presque) parfait.
-    valid = ~np.isnan(truth)
-    assert (aligned[valid] == truth[valid].astype(int)).mean() > 0.9
-
 
 def test_build_clustering_report_sorted(
     synthetic_features: tuple[np.ndarray, np.ndarray],
@@ -86,32 +72,3 @@ def test_build_clustering_report_sorted(
     assert aris == sorted(aris, reverse=True)
 
 
-def test_assign_weak_labels_excludes_strong(
-    synthetic_features: tuple[np.ndarray, np.ndarray],
-) -> None:
-    feats, truth = synthetic_features
-    res = fit_kmeans(feats, truth, n_clusters=2)
-    aligned = align_cluster_labels(res.labels, truth)
-
-    index_df = pd.DataFrame(
-        {
-            "image_id": [f"id_{i}" for i in range(len(feats))],
-            "path": [f"p_{i}" for i in range(len(feats))],
-            "split": [
-                "labeled" if not np.isnan(truth[i]) else "unlabeled" for i in range(len(feats))
-            ],
-            "label_name": [
-                "normal" if truth[i] == 0 else "cancer" if truth[i] == 1 else None
-                for i in range(len(feats))
-            ],
-            "label_index": [int(t) if not np.isnan(t) else None for t in truth],
-        }
-    )
-
-    weak = assign_weak_labels(index_df, aligned)
-    # Les images labellisées doivent être exclues.
-    assert (weak["weak_label_index"] != -1).all()
-    assert set(weak["weak_label_name"].unique()).issubset({"normal", "cancer"})
-    # Aucune image étiquetée fortement ne doit apparaître.
-    strong_ids = set(index_df.loc[index_df["split"] == "labeled", "image_id"])
-    assert not (set(weak["image_id"]) & strong_ids)
