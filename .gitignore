@@ -65,29 +65,31 @@ data/processed/*.json
 *.pkl
 *.joblib
 
-# --- Reports : on garde uniquement les livrables finaux ---
-reports/Labellisez_images_semisup_*/
+# --- Reports: only the generated figures and experiment artefacts are kept ---
 reports/figures/_tmp/
 reports/_build/
 reports/*.zip
-!reports/figures/keep.txt
+# Experiment runs carry raw predictions and per-fold metrics: kept, they are the evidence.
+!reports/experiments/
 
 # --- Logs ---
 *.log
 logs/
 
-# --- Outils Jupyter / Pandoc ---
+# --- Jupyter / Pandoc leftovers ---
 *.aux
 *.toc
 *.out
 
-# --- Outils de l'éditeur ---
+# --- Editor and assistant working folders ---
 .claude/
+.idea/
+.vscode/
 
-# --- Documentation source fournie ---
+# --- Source documentation shipped with the brief, never redistributed ---
 infos/
 
-# --- Sécurité ---
+# --- Secrets ---
 secrets.toml
 *.pem
 *.key
