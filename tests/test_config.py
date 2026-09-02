@@ -1,4 +1,4 @@
-"""Tests pour ``mri_semisupervised.config``."""
+"""Unit tests of the configuration."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def test_set_global_seeds_idempotent() -> None:
 
 
 def test_ensure_dirs(tmp_path, monkeypatch) -> None:
-    # On simule les chemins via monkeypatch pour éviter de toucher le projet.
+    # Paths are monkeypatched so the test never writes into the project tree.
     interim = tmp_path / "interim"
     processed = tmp_path / "processed"
     figures = tmp_path / "figures"

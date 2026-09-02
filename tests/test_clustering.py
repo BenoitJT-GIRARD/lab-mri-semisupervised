@@ -1,4 +1,4 @@
-"""Tests pour ``mri_semisupervised.models.clustering``."""
+"""Unit tests of the clustering helpers."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def test_kmeans_finds_two_clusters(synthetic_features: tuple[np.ndarray, np.ndar
     feats, truth = synthetic_features
     res = fit_kmeans(feats, truth, n_clusters=2)
     assert res.n_clusters == 2
-    # Les deux clusters sont si nettement séparés que ARI doit être ≈ 1.
+    # The two clusters are separated well enough that the ARI has to come out near 1.
     assert res.ari_vs_truth is not None
     assert res.ari_vs_truth > 0.8
     assert res.silhouette is not None and res.silhouette > 0.3
@@ -54,11 +54,10 @@ def test_agglomerative_and_gmm_run(synthetic_features: tuple[np.ndarray, np.ndar
 def test_dbscan_handles_outliers(synthetic_features: tuple[np.ndarray, np.ndarray]) -> None:
     feats, truth = synthetic_features
     res = fit_dbscan(feats, truth, eps=2.0, min_samples=5)
-    # DBSCAN peut trouver 1 ou 2 clusters avec ce eps. On vérifie juste
-    # qu'il renvoie des labels et un noise_ratio mesuré.
+    # DBSCAN may find one cluster or two at this eps. What is asserted is that it returns
+    # labels and a measured noise ratio, not a particular answer.
     assert "noise_ratio" in res.extras
     assert 0.0 <= res.extras["noise_ratio"] <= 1.0
-
 
 
 def test_build_clustering_report_sorted(
@@ -70,5 +69,3 @@ def test_build_clustering_report_sorted(
     assert "method" in report.columns
     aris = report["ari_vs_truth"].dropna().tolist()
     assert aris == sorted(aris, reverse=True)
-
-

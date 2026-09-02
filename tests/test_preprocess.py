@@ -1,4 +1,4 @@
-"""Tests pour ``mri_semisupervised.data.preprocess``."""
+"""Unit tests of the preprocessing pipelines."""
 
 from __future__ import annotations
 

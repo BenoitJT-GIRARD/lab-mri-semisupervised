@@ -1,13 +1,13 @@
-"""Pipeline de prétraitement adapté aux backbones ImageNet.
+"""Preprocessing for an ImageNet backbone.
 
-Les transformations sont conçues pour être :
+Two pipelines, and the difference between them matters:
 
-* déterministes en mode évaluation (resize + center-crop + normalisation),
-* enrichies en mode entraînement par des augmentations légères et plausibles
-  pour des IRM (flip horizontal, rotation modérée).
+* **evaluation** is deterministic — resize, centre crop, normalise. Anything random here
+  would make a measurement depend on a draw.
+* **training** adds light augmentations chosen to be plausible for an MRI.
 
-Les CNN ImageNet attendent du RGB ; les IRM cérébrales sont en niveaux de gris :
-on convertit explicitement en RGB en répliquant le canal.
+ImageNet CNNs expect RGB and brain MRI is greyscale, so the channel is replicated
+explicitly rather than left to whatever the loader happens to do.
 """
 
 from __future__ import annotations
@@ -23,19 +23,19 @@ from mri_semisupervised.config import IMAGENET_MEAN, IMAGENET_STD, INPUT_SIZE
 
 
 def equalize_image(image: Image.Image) -> Image.Image:
-    """Égalisation d'histogramme sur une IRM (niveaux de gris).
+    """Histogram equalisation on a greyscale MRI.
 
-    On repasse l'image en niveaux de gris puis on égalise son histogramme :
-    les intensités sont ré-étalées sur toute la plage 0-255, ce qui rehausse
-    le contraste et fait mieux ressortir les structures sur des IRM ternes.
-    On l'utilise surtout pour l'exploration visuelle (voir notebook 1).
+    Intensities are stretched back over the full 0-255 range, which lifts the contrast and
+    brings out structure on a dull scan. Used for visual exploration: the feature
+    extraction keeps the ImageNet normalisation instead, because that is what the backbone
+    was trained under.
     """
     gray = image.convert("L")
     return ImageOps.equalize(gray)
 
 
 def build_eval_transform(image_size: int = INPUT_SIZE) -> Callable[[Image.Image], object]:
-    """Pipeline déterministe pour l'extraction de features et l'évaluation."""
+    """The deterministic pipeline, for feature extraction and for evaluation."""
     return transforms.Compose(
         [
             transforms.Lambda(lambda im: im.convert("RGB")),
@@ -48,10 +48,11 @@ def build_eval_transform(image_size: int = INPUT_SIZE) -> Callable[[Image.Image]
 
 
 def build_train_transform(image_size: int = INPUT_SIZE) -> Callable[[Image.Image], object]:
-    """Pipeline d'entraînement avec augmentations IRM-safe.
+    """The training pipeline, with augmentations that respect the anatomy.
 
-    On évite les augmentations qui modifient la sémantique médicale :
-    pas de flip vertical (l'IRM cérébrale a un haut/bas), rotations limitées.
+    No vertical flip — a brain MRI has a top and a bottom — and rotation is capped at ten
+    degrees. An augmentation that changes what the image means is not augmentation, it is
+    corruption with extra steps.
     """
     return transforms.Compose(
         [
@@ -68,10 +69,10 @@ def build_train_transform(image_size: int = INPUT_SIZE) -> Callable[[Image.Image
 
 
 class ImagePathsDataset(Dataset):
-    """Dataset PyTorch minimaliste lisant des images depuis une liste de chemins.
+    """A minimal PyTorch dataset reading images from a list of paths.
 
-    ``labels`` est optionnel : si fourni, ``__getitem__`` renvoie ``(tensor, label)``,
-    sinon ``(tensor, index)`` afin de préserver l'ordre côté appelant.
+    ``labels`` is optional: with it, ``__getitem__`` returns ``(tensor, label)``; without
+    it, ``(tensor, index)``, so the caller can put the outputs back in order.
     """
 
     def __init__(
@@ -84,7 +85,7 @@ class ImagePathsDataset(Dataset):
         self.transform = transform
         self.labels = labels
         if labels is not None and len(labels) != len(self.paths):
-            raise ValueError("labels et paths doivent avoir la même longueur")
+            raise ValueError("labels and paths must have the same length")
 
     def __len__(self) -> int:
         return len(self.paths)
