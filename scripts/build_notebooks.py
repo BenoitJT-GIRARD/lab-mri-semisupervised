@@ -5,7 +5,7 @@ Pourquoi générer les ``.ipynb`` plutôt que les rédiger à la main ?
 * Reproductibilité : le code source des cellules vit dans le repo, sous
   contrôle de version, lisible et diffable.
 * Cohérence : les imports, les sections et les figures sont garantis identiques
-  entre le module ``curelyticsia`` et les notebooks.
+  entre le module ``mri_semisupervised`` et les notebooks.
 * Industrialisation : le pipeline ``uv run jupyter nbconvert --execute`` peut
   être rejoué sans intervention manuelle.
 """
@@ -33,9 +33,9 @@ def write_notebook(path: Path, cells: list[nbf.NotebookNode]) -> None:
     nb = nbf.v4.new_notebook(cells=cells)
     nb["metadata"] = {
         "kernelspec": {
-            "display_name": "Python (curelyticsia)",
+            "display_name": "Python (mri_semisupervised)",
             "language": "python",
-            "name": "curelyticsia",
+            "name": "mri_semisupervised",
         },
         "language_info": {
             "name": "python",
@@ -118,7 +118,7 @@ import pandas as pd
 ROOT = Path.cwd().parent if Path.cwd().name == "notebooks" else Path.cwd()
 sys.path.insert(0, str(ROOT / "src"))
 
-from curelyticsia.config import (  # noqa: E402
+from mri_semisupervised.config import (  # noqa: E402
     CLASS_TO_INDEX,
     CLASSES,
     ClusteringConfig,
@@ -160,7 +160,7 @@ print(result.stdout)
     cells.append(
         code(
             """
-from curelyticsia.data.loader import (
+from mri_semisupervised.data.loader import (
     discover_images,
     records_to_dataframe,
     summarise_dataset,
@@ -228,7 +228,7 @@ selon la taille des clusters.
     cells.append(
         code(
             """
-from curelyticsia.viz.plots import plot_image_grid
+from mri_semisupervised.viz.plots import plot_image_grid
 
 mask_cancer = (df["split"] == "labeled") & (df["label_name"] == "cancer")
 mask_normal = (df["split"] == "labeled") & (df["label_name"] == "normal")
@@ -279,8 +279,8 @@ _ = plot_image_grid(
     cells.append(
         code(
             """
-from curelyticsia.data.loader import compute_pixel_stats, detect_outlier_ids
-from curelyticsia.viz.plots import plot_pixel_stats
+from mri_semisupervised.data.loader import compute_pixel_stats, detect_outlier_ids
+from mri_semisupervised.viz.plots import plot_pixel_stats
 
 stats = compute_pixel_stats(records, sample_size=None)  # toutes les images
 print(stats.describe())
@@ -334,7 +334,7 @@ et fait mieux ressortir les structures. On la visualise ici sur une image
     cells.append(
         code(
             """
-from curelyticsia.viz.plots import plot_equalization
+from mri_semisupervised.viz.plots import plot_equalization
 
 # On prend une image labellisée "cancer" pour voir l'effet sur une lésion.
 sample_path = df.loc[mask_cancer, "path"].iloc[0]
@@ -384,7 +384,7 @@ spécifiquement sur l'imagerie médicale.
     cells.append(
         code(
             """
-from curelyticsia.features.extractor import extract_features
+from mri_semisupervised.features.extractor import extract_features
 
 cfg = FeatureConfig()
 features, index_df = extract_features(records, cfg=cfg, use_cache=True, progress=True)
@@ -427,9 +427,9 @@ import time
 import torch
 from torch.utils.data import DataLoader
 
-from curelyticsia.config import device
-from curelyticsia.data.preprocess import ImagePathsDataset, build_eval_transform
-from curelyticsia.features.extractor import build_backbone
+from mri_semisupervised.config import device
+from mri_semisupervised.data.preprocess import ImagePathsDataset, build_eval_transform
+from mri_semisupervised.features.extractor import build_backbone
 
 # Empreinte mémoire de la matrice d'embeddings déjà calculée.
 mem_mb = features.nbytes / 1e6
@@ -487,7 +487,7 @@ via PCA. La PCA accélère le clustering et stabilise t-SNE / UMAP.
     cells.append(
         code(
             """
-from curelyticsia.models.clustering import reduce_pca, standardise
+from mri_semisupervised.models.clustering import reduce_pca, standardise
 
 features_std, scaler = standardise(features)
 features_red, pca = reduce_pca(features_std, target_variance=0.95)
@@ -502,7 +502,7 @@ print(f"Première composante explique {pca.explained_variance_ratio_[0]:.2%} de 
     cells.append(
         code(
             """
-from curelyticsia.viz.plots import plot_2d_scatter, project_2d
+from mri_semisupervised.viz.plots import plot_2d_scatter, project_2d
 
 labels_for_color = index_df["label_name"].fillna(value="").replace("", None).tolist()
 
@@ -549,7 +549,7 @@ vérité terrain.
     cells.append(
         code(
             """
-from curelyticsia.models.clustering import (
+from mri_semisupervised.models.clustering import (
     align_cluster_labels,
     assign_weak_labels,
     build_clustering_report,
@@ -787,7 +787,7 @@ from sklearn.model_selection import train_test_split
 ROOT = Path.cwd().parent if Path.cwd().name == "notebooks" else Path.cwd()
 sys.path.insert(0, str(ROOT / "src"))
 
-from curelyticsia.config import (  # noqa: E402
+from mri_semisupervised.config import (  # noqa: E402
     CLASS_TO_INDEX,
     CLASSES,
     ClusteringConfig,
@@ -799,8 +799,8 @@ from curelyticsia.config import (  # noqa: E402
     ensure_dirs,
     set_global_seeds,
 )
-from curelyticsia.features.extractor import load_cached_features  # noqa: E402
-from curelyticsia.viz.plots import (  # noqa: E402
+from mri_semisupervised.features.extractor import load_cached_features  # noqa: E402
+from mri_semisupervised.viz.plots import (  # noqa: E402
     plot_confusion_matrix,
     plot_history,
     plot_metrics_bar,
@@ -871,7 +871,7 @@ Pourquoi 50/50 plutôt que 80/20 ?
     cells.append(
         code(
             """
-from curelyticsia.models.semi_supervised import (
+from mri_semisupervised.models.semi_supervised import (
     aggregate_reports,
     cross_validate,
     train_semi_supervised,
@@ -1039,7 +1039,7 @@ graphique (l'aire sous la courbe, l'AUC, est rappelée dans la légende).
     cells.append(
         code(
             """
-from curelyticsia.viz.plots import plot_roc_compare
+from mri_semisupervised.viz.plots import plot_roc_compare
 
 
 def pool_scores(reports_list):

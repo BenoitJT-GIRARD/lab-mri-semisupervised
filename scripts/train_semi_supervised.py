@@ -16,7 +16,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from curelyticsia.config import (
+from mri_semisupervised.config import (
     CLASS_TO_INDEX,
     CLASSES,
     PROCESSED_DIR,
@@ -27,8 +27,8 @@ from curelyticsia.config import (
     ensure_dirs,
     set_global_seeds,
 )
-from curelyticsia.features.extractor import load_cached_features
-from curelyticsia.models.semi_supervised import (
+from mri_semisupervised.features.extractor import load_cached_features
+from mri_semisupervised.models.semi_supervised import (
     aggregate_reports,
     cross_validate,
 )

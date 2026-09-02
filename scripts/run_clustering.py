@@ -11,15 +11,15 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from curelyticsia.config import (
+from mri_semisupervised.config import (
     CLASS_TO_INDEX,
     ClusteringConfig,
     FeatureConfig,
     ensure_dirs,
     set_global_seeds,
 )
-from curelyticsia.features.extractor import load_cached_features
-from curelyticsia.models.clustering import (
+from mri_semisupervised.features.extractor import load_cached_features
+from mri_semisupervised.models.clustering import (
     align_cluster_labels,
     assign_weak_labels,
     build_clustering_report,
