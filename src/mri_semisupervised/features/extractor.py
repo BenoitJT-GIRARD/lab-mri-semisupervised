@@ -63,7 +63,9 @@ class CacheMismatchError(RuntimeError):
     """
 
 
-def _check_cache(cached: pd.DataFrame, records: list[ImageRecord], backbone: str) -> None:
+def _check_cache(
+    cached: pd.DataFrame, records: list[ImageRecord], backbone: str, equalize: bool
+) -> None:
     """Refuse a cache that disagrees with the records, and say how it disagrees.
 
     The comparison is on the identifiers rather than on an aggregate fingerprint. The
@@ -80,6 +82,17 @@ def _check_cache(cached: pd.DataFrame, records: list[ImageRecord], backbone: str
         raise CacheMismatchError(
             f"the cache was built with backbone {stored}, and {backbone!r} is being asked "
             "for. Same shape, different contents. Delete it to recompute."
+        )
+    if "equalize" not in cached.columns:
+        raise CacheMismatchError(
+            "the cache carries no equalize column, so it predates this guard. "
+            "Delete it to recompute."
+        )
+    stored_eq = sorted({bool(v) for v in cached["equalize"].unique()})
+    if stored_eq != [bool(equalize)]:
+        raise CacheMismatchError(
+            f"the cache was built with equalize={stored_eq}, and {bool(equalize)} is being "
+            "asked for. Same shape, different pixels. Delete it to recompute."
         )
 
     # Multisets, not sets. The dataset genuinely holds duplicate content — 31 evaluation
@@ -120,7 +133,7 @@ def extract_features(
 
     if use_cache and cache_path.exists():
         cached = pd.read_parquet(cache_path)
-        _check_cache(cached, records, cfg.backbone)
+        _check_cache(cached, records, cfg.backbone, cfg.equalize)
         # Row alignment is with the caller's list, not with the order the file happens to
         # hold: every consumer indexes the matrix by the position of its record. Rows that
         # share an identifier share their pixels, so which of them a record receives does
@@ -134,7 +147,7 @@ def extract_features(
         return features, cached[INDEX_COLUMNS].copy()
 
     paths = [str(r.path) for r in records]
-    transform = build_eval_transform()
+    transform = build_eval_transform(equalize=cfg.equalize)
     dataset = ImagePathsDataset(paths=paths, transform=transform)
     loader = DataLoader(
         dataset,
@@ -169,7 +182,9 @@ def extract_features(
 
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     feature_cols = [f"f_{i:04d}" for i in range(feature_dim)]
-    stamp = pd.DataFrame({"backbone": [cfg.backbone] * len(records)})
+    stamp = pd.DataFrame(
+        {"backbone": [cfg.backbone] * len(records), "equalize": [cfg.equalize] * len(records)}
+    )
     df_cache = pd.concat([index_df, stamp, pd.DataFrame(feats, columns=feature_cols)], axis=1)
     df_cache.to_parquet(cache_path, index=False)
 

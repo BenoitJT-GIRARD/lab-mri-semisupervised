@@ -82,3 +82,29 @@ def test_label_length_mismatch_raises(tmp_path: Path) -> None:
     _make_image(p)
     with pytest.raises(ValueError):
         ImagePathsDataset(paths=[p, p], transform=build_eval_transform(), labels=[0])
+
+
+def test_the_equalised_transform_changes_the_pixels() -> None:
+    """A dull scan must come out different, or the flag is decorative."""
+    rng = np.random.default_rng(0)
+    dull = Image.fromarray((90 + rng.integers(-8, 8, (64, 64))).astype(np.uint8))
+
+    plain = build_eval_transform(64)(dull)
+    equalised = build_eval_transform(64, equalize=True)(dull)
+
+    assert plain.shape == equalised.shape
+    assert float(np.abs(plain.numpy() - equalised.numpy()).max()) > 0.5
+
+
+def test_equalisation_keeps_the_tensor_contract() -> None:
+    """It goes in front of the resize; shape and normalisation do not change."""
+    image = Image.fromarray(np.full((70, 50), 120, dtype=np.uint8))
+    for equalize in (False, True):
+        out = build_eval_transform(64, equalize=equalize)(image)
+        assert out.shape == (3, 64, 64)
+
+
+def test_the_training_transform_takes_the_flag_too() -> None:
+    """Equalising evaluation and not training would compare two different pipelines."""
+    image = Image.fromarray(np.full((70, 50), 120, dtype=np.uint8))
+    assert build_train_transform(64, equalize=True)(image).shape == (3, 64, 64)

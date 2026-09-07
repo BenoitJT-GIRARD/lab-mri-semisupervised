@@ -52,6 +52,13 @@ from mri_semisupervised.protocol.splits import derive_seed, inner_split, outer_f
 
 CORRECTED = "corrected"
 LEGACY = "legacy"
+#: The corrected protocol, run again with histogram equalisation in both transforms.
+#: Not an arm: equalisation changes the pixels, so it changes the embeddings, the
+#: clustering and everything downstream. It is a second run of the whole protocol,
+#: compared to the first fold by fold.
+EQUALIZED = "equalized"
+#: Modes that use the leak-free protocol. Only the preprocessing differs.
+CORRECTED_MODES = (CORRECTED, EQUALIZED)
 
 
 @dataclass(frozen=True)
@@ -102,7 +109,8 @@ def _versions() -> dict[str, str]:
 def _load_inputs(mode: str) -> tuple[pd.DataFrame, np.ndarray, np.ndarray, dict[str, Path]]:
     """Manifest, features and the id → path map, filtered according to the mode."""
     manifest = pd.read_parquet(MANIFEST_PATH)
-    cached = pd.read_parquet(FeatureConfig().cache_path)
+    features_cfg = FeatureConfig.for_variant(equalize=mode == EQUALIZED)
+    cached = pd.read_parquet(features_cfg.cache_path)
     feature_cols = [c for c in cached.columns if c.startswith("f_")]
 
     # One feature row per distinct image: the cache holds one row per *file*.
@@ -120,7 +128,7 @@ def _load_inputs(mode: str) -> tuple[pd.DataFrame, np.ndarray, np.ndarray, dict[
 def _evaluation_set(manifest: pd.DataFrame, mode: str) -> tuple[np.ndarray, np.ndarray]:
     """The images the arms are scored on."""
     labelled = manifest[manifest["pool"] == LABELLED]
-    if mode == CORRECTED:
+    if mode in CORRECTED_MODES:
         labelled = labelled[labelled["kept_for_training"]]
     return (
         labelled["image_id"].to_numpy(dtype=object),
@@ -135,7 +143,7 @@ def _unlabelled_pool(manifest: pd.DataFrame, mode: str) -> np.ndarray:
     included, which is the defect being priced.
     """
     pool = manifest[manifest["pool"] == UNLABELLED]
-    if mode == CORRECTED:
+    if mode in CORRECTED_MODES:
         pool = pool[pool["kept_for_training"]]
     return pool["image_id"].drop_duplicates().to_numpy(dtype=object)
 
@@ -148,11 +156,16 @@ def run_experiment(
     progress: bool = True,
 ) -> ExperimentResult:
     """Run every fold of every arm, and write the artefacts."""
-    if mode not in (CORRECTED, LEGACY):
+    if mode not in (*CORRECTED_MODES, LEGACY):
         raise ValueError(f"unknown mode: {mode}")
 
     protocol = protocol or ProtocolConfig()
     training = training or TrainingConfig()
+    if training.equalize != (mode == EQUALIZED):
+        raise ValueError(
+            f"mode {mode!r} and TrainingConfig(equalize={training.equalize}) disagree; "
+            "the arms would train on different pixels than the clustering saw"
+        )
     output_root = output_root or EXPERIMENTS_DIR
 
     started = time.time()
@@ -177,7 +190,7 @@ def run_experiment(
         train_ids, train_labels = eval_ids[spec.train_idx], eval_labels[spec.train_idx]
         test_ids, test_labels = eval_ids[spec.test_idx], eval_labels[spec.test_idx]
 
-        if mode == CORRECTED:
+        if mode in CORRECTED_MODES:
             pseudo = fit_pseudo_labels(
                 features, feature_ids, pool_ids, train_ids, train_labels, seed=spec.seed
             )
@@ -305,4 +318,4 @@ def run_experiment(
     return ExperimentResult(run_id, mode, per_fold, all_predictions, folds_frame, directory)
 
 
-__all__ = ["CORRECTED", "LEGACY", "ExperimentResult", "run_experiment"]
+__all__ = ["CORRECTED", "EQUALIZED", "LEGACY", "ExperimentResult", "run_experiment"]

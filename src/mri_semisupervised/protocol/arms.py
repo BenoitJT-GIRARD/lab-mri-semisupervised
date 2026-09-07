@@ -84,9 +84,8 @@ def _loader(
     train: bool,
     seed: int,
 ) -> DataLoader:
-    transform = (
-        build_train_transform(cfg.image_size) if train else build_eval_transform(cfg.image_size)
-    )
+    builder = build_train_transform if train else build_eval_transform
+    transform = builder(cfg.image_size, equalize=cfg.equalize)
     dataset = ImagePathsDataset(paths=paths, transform=transform, labels=labels)
     generator = torch.Generator()
     generator.manual_seed(seed)

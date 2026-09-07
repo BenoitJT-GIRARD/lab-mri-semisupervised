@@ -100,7 +100,14 @@ def wired(tmp_path: Path, monkeypatch):
     features_config = SimpleNamespace(cache_path=cache_path)
 
     monkeypatch.setattr(experiment_module, "MANIFEST_PATH", manifest_path)
-    monkeypatch.setattr(experiment_module, "FeatureConfig", lambda: features_config)
+    # The double has to carry the real interface, not just be callable. These tests
+    # exercise the corrected and legacy modes, which read the same cache, so one
+    # config answers every variant.
+    monkeypatch.setattr(
+        experiment_module,
+        "FeatureConfig",
+        SimpleNamespace(for_variant=lambda **_: features_config),
+    )
 
     seen: list[dict] = []
 

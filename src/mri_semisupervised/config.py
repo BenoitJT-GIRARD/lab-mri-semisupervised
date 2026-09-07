@@ -60,7 +60,25 @@ class FeatureConfig:
     output_dim: int = 2048
     batch_size: int = 32
     num_workers: int = 0  # Windows: 0 avoids the torch pickling trouble
+    #: Histogram-equalise before the backbone sees the image. Changes the pixels, so it
+    #: changes the embeddings, the clustering and everything downstream — hence a separate
+    #: cache, and a stamp inside it so the two can never be confused.
+    equalize: bool = False
     cache_path: Path = field(default_factory=lambda: PROCESSED_DIR / "features_resnet50.parquet")
+
+    @classmethod
+    def for_variant(cls, *, equalize: bool = False, backbone: str = "resnet50") -> FeatureConfig:
+        """Build a config whose cache path matches its preprocessing.
+
+        The flag and the path have to agree, and remembering to set both is the kind of
+        thing one forgets once. This sets them together; the cache guard catches it anyway.
+        """
+        suffix = "_equalized" if equalize else ""
+        return cls(
+            backbone=backbone,
+            equalize=equalize,
+            cache_path=PROCESSED_DIR / f"features_{backbone}{suffix}.parquet",
+        )
 
 
 @dataclass(frozen=True)
@@ -100,6 +118,8 @@ class TrainingConfig:
     # one that scores best on the inner validation is kept. Zero is in the grid on
     # purpose: the arm must be able to choose not to filter, and to say so.
     confidence_quantiles: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75)
+    #: Histogram-equalise in both transforms. Must match the FeatureConfig the run reads.
+    equalize: bool = False
 
 
 @dataclass(frozen=True)

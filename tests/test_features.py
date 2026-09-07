@@ -62,6 +62,7 @@ def _write_cache(
     image_ids: list[str],
     *,
     backbone: str = "resnet18",
+    equalize: bool = False,
     dim: int = 512,
 ) -> None:
     """Write a cache parquet by hand, so a test can make it disagree with the records."""
@@ -75,6 +76,7 @@ def _write_cache(
             "label_name": ["normal"] * len(image_ids),
             "label_index": [0] * len(image_ids),
             "backbone": [backbone] * len(image_ids),
+            "equalize": [equalize] * len(image_ids),
         }
     )
     feats = pd.DataFrame(
@@ -85,8 +87,14 @@ def _write_cache(
     pd.concat([frame, feats], axis=1).to_parquet(path, index=False)
 
 
-def _cfg(cache: Path, backbone: str = "resnet18") -> FeatureConfig:
-    return FeatureConfig(backbone=backbone, output_dim=512, batch_size=4, cache_path=cache)
+def _cfg(cache: Path, backbone: str = "resnet18", *, equalize: bool = False) -> FeatureConfig:
+    return FeatureConfig(
+        backbone=backbone,
+        output_dim=512,
+        batch_size=4,
+        equalize=equalize,
+        cache_path=cache,
+    )
 
 
 def test_a_cache_missing_an_image_is_refused_and_names_it(
@@ -156,3 +164,26 @@ def test_a_matching_cache_is_returned_in_the_order_of_the_records(
     assert feats.shape == (len(records), 512)
     assert list(index_df["image_id"]) == [r.image_id for r in records]
     assert "backbone" not in index_df.columns
+
+
+def test_an_equalised_cache_is_refused_for_a_plain_run(
+    synthetic_dataset: Path, tmp_path: Path
+) -> None:
+    """Same shape, different pixels — the failure mode a column count cannot see."""
+    records, _ = discover_images(synthetic_dataset)
+    cache = tmp_path / "features.parquet"
+    _write_cache(cache, [r.image_id for r in records], equalize=True)
+
+    with pytest.raises(CacheMismatchError, match="equalize"):
+        extract_features(records, cfg=_cfg(cache), use_cache=True, progress=False)
+
+
+def test_the_variant_helper_ties_the_flag_to_the_cache_path() -> None:
+    """Setting one and forgetting the other is the mistake this helper removes."""
+    plain = FeatureConfig.for_variant()
+    equalised = FeatureConfig.for_variant(equalize=True)
+
+    assert plain.equalize is False
+    assert equalised.equalize is True
+    assert plain.cache_path != equalised.cache_path
+    assert "equalized" in equalised.cache_path.name

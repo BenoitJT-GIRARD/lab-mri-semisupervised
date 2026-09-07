@@ -3,6 +3,7 @@
 Usage:
     uv run python scripts/run_experiment.py                       # the corrected protocol
     uv run python scripts/run_experiment.py --mode legacy         # reproduce the old one
+    uv run python scripts/run_experiment.py --mode equalized      # with equalisation
     uv run python scripts/run_experiment.py --repeats 1 --folds 5 # a quick pass
 """
 
@@ -21,7 +22,12 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 from mri_semisupervised.config import ProtocolConfig, TrainingConfig, ensure_dirs
-from mri_semisupervised.protocol.experiment import CORRECTED, LEGACY, run_experiment
+from mri_semisupervised.protocol.experiment import (
+    CORRECTED,
+    EQUALIZED,
+    LEGACY,
+    run_experiment,
+)
 from mri_semisupervised.protocol.uncertainty import bootstrap_ci, paired_difference
 
 HEADLINE = ("roc_auc", "pr_auc", "recall_positive", "f1_macro", "accuracy")
@@ -92,7 +98,7 @@ def summarise(result) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=[CORRECTED, LEGACY], default=CORRECTED)
+    parser.add_argument("--mode", choices=[CORRECTED, EQUALIZED, LEGACY], default=CORRECTED)
     parser.add_argument("--repeats", type=int, default=None)
     parser.add_argument("--folds", type=int, default=None)
     parser.add_argument("--epochs-strong", type=int, default=None)
@@ -105,7 +111,7 @@ def main() -> None:
     if args.folds:
         protocol = ProtocolConfig(**{**protocol.__dict__, "n_splits": args.folds})
 
-    training = TrainingConfig()
+    training = TrainingConfig(equalize=args.mode == EQUALIZED)
     if args.epochs_strong:
         training = TrainingConfig(**{**training.__dict__, "epochs_strong": args.epochs_strong})
 

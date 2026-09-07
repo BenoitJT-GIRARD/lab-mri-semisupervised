@@ -26,18 +26,25 @@ def equalize_image(image: Image.Image) -> Image.Image:
     """Histogram equalisation on a greyscale MRI.
 
     Intensities are stretched back over the full 0-255 range, which lifts the contrast and
-    brings out structure on a dull scan. Used for visual exploration: the feature
-    extraction keeps the ImageNet normalisation instead, because that is what the backbone
-    was trained under.
+    brings out structure on a dull scan.
+
+    Whether it belongs in the pipeline is a measured question, not a stylistic one: it was
+    illustrated in the notebook and called nowhere for a long time, which is the kind of gap
+    between what a repository shows and what it runs that the rest of this code exists to
+    close. Both transforms below take an ``equalize`` flag, and the ``equalized`` experiment
+    mode runs the whole protocol with it on so the two can be compared fold by fold.
     """
     gray = image.convert("L")
     return ImageOps.equalize(gray)
 
 
-def build_eval_transform(image_size: int = INPUT_SIZE) -> Callable[[Image.Image], object]:
+def build_eval_transform(
+    image_size: int = INPUT_SIZE, *, equalize: bool = False
+) -> Callable[[Image.Image], object]:
     """The deterministic pipeline, for feature extraction and for evaluation."""
     return transforms.Compose(
         [
+            *([transforms.Lambda(equalize_image)] if equalize else []),
             transforms.Lambda(lambda im: im.convert("RGB")),
             transforms.Resize(int(image_size * 1.14)),  # ≈ 256 quand image_size=224
             transforms.CenterCrop(image_size),
@@ -47,7 +54,9 @@ def build_eval_transform(image_size: int = INPUT_SIZE) -> Callable[[Image.Image]
     )
 
 
-def build_train_transform(image_size: int = INPUT_SIZE) -> Callable[[Image.Image], object]:
+def build_train_transform(
+    image_size: int = INPUT_SIZE, *, equalize: bool = False
+) -> Callable[[Image.Image], object]:
     """The training pipeline, with augmentations that respect the anatomy.
 
     No vertical flip — a brain MRI has a top and a bottom — and rotation is capped at ten
@@ -56,6 +65,8 @@ def build_train_transform(image_size: int = INPUT_SIZE) -> Callable[[Image.Image
     """
     return transforms.Compose(
         [
+            # Equalisation comes first, on the raw greyscale, before anything resamples it.
+            *([transforms.Lambda(equalize_image)] if equalize else []),
             transforms.Lambda(lambda im: im.convert("RGB")),
             transforms.Resize(int(image_size * 1.14)),
             transforms.RandomResizedCrop(image_size, scale=(0.85, 1.0), ratio=(0.95, 1.05)),
