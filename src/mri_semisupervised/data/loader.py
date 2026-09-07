@@ -1,12 +1,14 @@
-"""Chargement, inventaire et contrôle qualité du dataset BrainScanAI.
+"""Inventory and quality control of the image set.
 
-Ce module ne dépend que de Pillow / pandas / numpy : il peut être importé sans
-PyTorch pour l'exploration initiale.
+Depends on Pillow, pandas and numpy alone, so the exploration can start without importing
+PyTorch.
+
+Identity comes from :mod:`mri_semisupervised.data.manifest`: an image is what it contains,
+not where it sits. That used to be the other way round, and it hid a leak.
 """
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,14 +17,15 @@ import numpy as np
 import pandas as pd
 from PIL import Image, ImageFile, UnidentifiedImageError
 
-from curelyticsia.config import (
+from mri_semisupervised.config import (
     CLASS_TO_INDEX,
     DATASET_ROOT,
     LABELED_DIR,
     UNLABELED_DIR,
 )
+from mri_semisupervised.data.manifest import content_id
 
-# Tolère les images JPEG légèrement tronquées (sans masquer une corruption).
+# Do not silently accept truncated JPEGs: a corrupt file should be reported, not padded.
 ImageFile.LOAD_TRUNCATED_IMAGES = False
 
 VALID_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png"})
@@ -30,7 +33,7 @@ VALID_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png"})
 
 @dataclass(frozen=True)
 class ImageRecord:
-    """Une ligne de l'inventaire."""
+    """One row of the inventory."""
 
     image_id: str
     path: Path
@@ -44,8 +47,13 @@ class ImageRecord:
 
 
 def _safe_hash(path: Path) -> str:
-    """Hash MD5 court d'un chemin (id stable même si l'utilisateur renomme)."""
-    return hashlib.md5(str(path).encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
+    """Identify an image by its content.
+
+    This used to hash the path, which meant two copies of one scan in two folders received
+    two identifiers — and the guard that kept the labelled images out of the unlabelled
+    pool never fired. See :mod:`mri_semisupervised.data.manifest`.
+    """
+    return content_id(path)
 
 
 def _iter_image_paths(directory: Path) -> Iterable[Path]:
@@ -59,7 +67,7 @@ def _iter_image_paths(directory: Path) -> Iterable[Path]:
 
 
 def _read_image_meta(path: Path) -> tuple[int, int, str] | None:
-    """Renvoie ``(width, height, mode)`` ou ``None`` si l'image est illisible."""
+    """Return ``(width, height, mode)``, or ``None`` when the image cannot be read."""
     try:
         with Image.open(path) as img:
             img.verify()
@@ -75,10 +83,10 @@ def _read_image_meta(path: Path) -> tuple[int, int, str] | None:
 def discover_images(
     dataset_root: Path = DATASET_ROOT,
 ) -> tuple[list[ImageRecord], list[Path]]:
-    """Scanne le dataset et renvoie ``(records_valides, fichiers_corrompus)``.
+    """Walk the dataset and return ``(valid_records, corrupted_files)``.
 
-    Les images qui ne peuvent pas être ouvertes par Pillow sont écartées et
-    listées séparément afin d'être documentées dans le notebook.
+    Images Pillow cannot open are set aside and returned separately rather than dropped
+    quietly: a file that fails to load is a fact about the dataset, and it gets reported.
     """
     records: list[ImageRecord] = []
     corrupted: list[Path] = []
@@ -160,11 +168,10 @@ def compute_pixel_stats(
     sample_size: int | None = None,
     seed: int = 0,
 ) -> pd.DataFrame:
-    """Calcule des statistiques de pixels par image.
+    """Per-image pixel statistics.
 
-    Pour limiter le coût, seules les images d'un échantillon (ou toutes si
-    ``sample_size is None``) sont lues. Renvoie un DataFrame avec
-    ``image_id``, ``mean``, ``std``, ``min``, ``max``.
+    Reads a sample, or everything when ``sample_size`` is ``None``. Returns a frame of
+    ``image_id``, ``mean``, ``std``, ``min`` and ``max``.
     """
     if not records:
         return pd.DataFrame(columns=["image_id", "mean", "std", "min", "max"])
@@ -196,10 +203,11 @@ def detect_outlier_ids(
     stats: pd.DataFrame,
     z_threshold: float = 4.0,
 ) -> list[str]:
-    """Renvoie les ``image_id`` dont la moyenne ou l'écart-type s'écarte de plus de
-    ``z_threshold`` écarts-types par rapport à la moyenne globale.
+    """Return the ``image_id`` whose mean or standard deviation sits more than
+    ``z_threshold`` standard deviations away from the overall one.
 
-    Un seuil élevé (4σ) limite la suppression à des cas réellement aberrants.
+    The threshold is deliberately high: at 4 sigma it flags the genuinely aberrant and
+    leaves the merely unusual alone.
     """
     if stats.empty:
         return []
@@ -210,10 +218,10 @@ def detect_outlier_ids(
 
 
 def summarise_dataset(records: list[ImageRecord]) -> dict[str, object]:
-    """Résumé textuel : compteurs par split / classe, résolutions, modes."""
+    """Counts by pool and class, plus resolutions and colour modes."""
     df = records_to_dataframe(records)
     summary: dict[str, object] = {
-        "total": int(len(df)),
+        "total": len(df),
         "by_split": df.groupby("split", dropna=False).size().to_dict(),
         "by_label": df.groupby("label_name", dropna=False).size().to_dict(),
         "modes": df["mode"].value_counts().to_dict(),
@@ -223,10 +231,10 @@ def summarise_dataset(records: list[ImageRecord]) -> dict[str, object]:
 
 
 __all__ = [
-    "ImageRecord",
     "LABELED_DIR",
     "UNLABELED_DIR",
     "VALID_EXTENSIONS",
+    "ImageRecord",
     "compute_pixel_stats",
     "detect_outlier_ids",
     "discover_images",

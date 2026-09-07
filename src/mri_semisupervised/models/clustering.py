@@ -1,8 +1,14 @@
-"""Helpers pour le clustering exploratoire.
+"""Helpers for the exploratory clustering.
 
-L'objectif : tester *plusieurs* algorithmes sur les embeddings ResNet, comparer
-des métriques internes (silhouette, Davies-Bouldin, Calinski-Harabasz) et la
-métrique externe ARI calculée sur les 100 images labellisées.
+The point is to try *several* algorithms on the ResNet embeddings and compare them on
+internal metrics (silhouette, Davies-Bouldin, Calinski-Harabasz) alongside the external
+ARI.
+
+**Which labels the ARI may read is the caller's business, not this module's.** These
+functions take ``truth=None`` in the protocol and are scored afterwards, against the
+labels the caller is allowed to see. The cluster-to-class alignment and the pseudo-label
+assignment used to live here; they now live in :mod:`mri_semisupervised.protocol`, because
+deciding which labels are readable is a matter of protocol.
 """
 
 from __future__ import annotations
@@ -22,12 +28,10 @@ from sklearn.metrics import (
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
-from curelyticsia.config import ClusteringConfig
-
 
 @dataclass(frozen=True)
 class ClusteringResult:
-    """Résultat d'un algorithme de clustering."""
+    """What one clustering algorithm produced."""
 
     name: str
     labels: np.ndarray
@@ -40,7 +44,12 @@ class ClusteringResult:
 
 
 def standardise(features: np.ndarray) -> tuple[np.ndarray, StandardScaler]:
-    """Centre-réduit les features (recommandation explicite de l'énoncé)."""
+    """Centre and scale the features.
+
+    Standardising before clustering is the usual move on embeddings, and it has a cost
+    worth knowing: a signal carried by a few dimensions is scaled down to the level of the
+    noise in every other one.
+    """
     scaler = StandardScaler()
     return scaler.fit_transform(features), scaler
 
@@ -51,7 +60,7 @@ def reduce_pca(
     max_components: int = 100,
     seed: int = 42,
 ) -> tuple[np.ndarray, PCA]:
-    """PCA pour conserver ``target_variance`` de variance, plafonnée à ``max_components``."""
+    """PCA keeping ``target_variance`` of the variance, capped at ``max_components``."""
     n_components = min(max_components, features.shape[0], features.shape[1])
     pca = PCA(n_components=n_components, random_state=seed)
     reduced = pca.fit_transform(features)
@@ -143,8 +152,18 @@ def fit_gmm(
     n_components: int = 2,
     seed: int = 42,
 ) -> ClusteringResult:
-    """Gaussian Mixture Model."""
-    model = GaussianMixture(n_components=n_components, random_state=seed, covariance_type="full")
+    """Gaussian Mixture Model.
+
+    ``reg_covar`` is raised well above the scikit-learn default: a full covariance over
+    roughly a hundred PCA components, estimated from about fourteen hundred points, is
+    routinely ill-conditioned, and the fit then fails outright on some folds.
+    """
+    model = GaussianMixture(
+        n_components=n_components,
+        random_state=seed,
+        covariance_type="full",
+        reg_covar=1e-4,
+    )
     labels = model.fit_predict(features)
     sil, db, ch = _safe_internal_metrics(features, labels)
     return ClusteringResult(
@@ -165,7 +184,7 @@ def fit_dbscan(
     eps: float = 5.0,
     min_samples: int = 10,
 ) -> ClusteringResult:
-    """DBSCAN — utile pour détecter du bruit / des sous-structures."""
+    """DBSCAN — the one that can refuse to split, and say so by calling everything noise."""
     model = DBSCAN(eps=eps, min_samples=min_samples, n_jobs=-1)
     labels = model.fit_predict(features)
     n_clusters = len(set(labels.tolist()) - {-1})
@@ -182,43 +201,8 @@ def fit_dbscan(
     )
 
 
-def align_cluster_labels(
-    cluster_labels: np.ndarray,
-    truth: np.ndarray | None,
-) -> np.ndarray:
-    """Aligne les indices de cluster sur les labels de vérité par vote majoritaire.
-
-    Les images sans label de vérité ne sont pas utilisées pour l'alignement,
-    mais reçoivent une étiquette alignée via la table de mapping construite.
-    Les points labellisés par DBSCAN comme bruit (-1) gardent ``-1``.
-    """
-    if truth is None:
-        return cluster_labels.copy()
-
-    aligned = cluster_labels.copy()
-    valid = ~pd.isna(truth)
-    truth_int = truth[valid].astype(int)
-    cluster_int = cluster_labels[valid]
-
-    mapping: dict[int, int] = {}
-    for cl in np.unique(cluster_labels):
-        if cl == -1:
-            mapping[-1] = -1
-            continue
-        mask = cluster_int == cl
-        if mask.sum() == 0:
-            mapping[int(cl)] = int(cl)
-            continue
-        majority = int(np.bincount(truth_int[mask]).argmax())
-        mapping[int(cl)] = majority
-
-    for cl, lbl in mapping.items():
-        aligned[cluster_labels == cl] = lbl
-    return aligned
-
-
 def build_clustering_report(results: list[ClusteringResult]) -> pd.DataFrame:
-    """Tableau récapitulatif comparable trié par ARI décroissant."""
+    """Comparison table, sorted by decreasing ARI."""
     rows = []
     for r in results:
         row = {
@@ -237,45 +221,9 @@ def build_clustering_report(results: list[ClusteringResult]) -> pd.DataFrame:
     )
 
 
-def assign_weak_labels(
-    index_df: pd.DataFrame,
-    aligned_labels: np.ndarray,
-) -> pd.DataFrame:
-    """Construit la table des pseudo-labels « faibles » sur le jeu non labellisé.
-
-    On expose explicitement les colonnes ``image_id``, ``path``, ``weak_label_index``,
-    ``weak_label_name``. Les images déjà labellisées sont *exclues* afin de
-    respecter la consigne : « ne jamais mélanger faible et fort ».
-    """
-    if len(aligned_labels) != len(index_df):
-        raise ValueError("aligned_labels et index_df doivent avoir la même longueur")
-
-    df = index_df.copy()
-    df["weak_label_index"] = aligned_labels
-    name_map = {0: "normal", 1: "cancer", -1: "noise"}
-    df["weak_label_name"] = df["weak_label_index"].map(lambda v: name_map.get(int(v), "unknown"))
-
-    weak = df[df["split"] == "unlabeled"][
-        ["image_id", "path", "weak_label_index", "weak_label_name"]
-    ].copy()
-    weak = weak[weak["weak_label_index"] != -1].reset_index(drop=True)
-    return weak
-
-
-def export_weak_labels(weak: pd.DataFrame, cfg: ClusteringConfig | None = None) -> str:
-    """Sauvegarde les pseudo-labels au format CSV et renvoie le chemin."""
-    cfg = cfg or ClusteringConfig()
-    cfg.weak_labels_path.parent.mkdir(parents=True, exist_ok=True)
-    weak.to_csv(cfg.weak_labels_path, index=False)
-    return str(cfg.weak_labels_path)
-
-
 __all__ = [
     "ClusteringResult",
-    "align_cluster_labels",
-    "assign_weak_labels",
     "build_clustering_report",
-    "export_weak_labels",
     "fit_agglomerative",
     "fit_dbscan",
     "fit_gmm",

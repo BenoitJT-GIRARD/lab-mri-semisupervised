@@ -1,4 +1,4 @@
-"""Tests pour ``curelyticsia.data.loader``."""
+"""Unit tests of the dataset loader."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from curelyticsia.data.loader import (
+from mri_semisupervised.data.loader import (
     compute_pixel_stats,
     detect_outlier_ids,
     discover_images,
@@ -64,12 +64,12 @@ def test_pixel_stats_and_outliers(synthetic_dataset: Path) -> None:
     assert len(stats) == 14
     assert stats["mean"].between(0.0, 1.0).all()
 
-    # Avec un seuil très bas, la moitié des images deviennent "outliers" car
-    # les classes ont des intensités contrastées.
+    # At a very low threshold half the images become outliers, because the two classes
+    # sit at contrasted intensities by construction.
     aggressive = detect_outlier_ids(stats, z_threshold=0.5)
     assert len(aggressive) > 0
 
-    # Avec un seuil très haut, aucune image ne doit être déclarée outlier.
+    # At a very high threshold nothing should be flagged.
     soft = detect_outlier_ids(stats, z_threshold=10.0)
     assert soft == []
 

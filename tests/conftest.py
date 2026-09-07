@@ -1,4 +1,4 @@
-"""Fixtures partagées par les tests."""
+"""Fixtures shared across the test suite."""
 
 from __future__ import annotations
 
@@ -16,12 +16,12 @@ def _write_synthetic_image(path: Path, value: int = 128, size: int = 32) -> None
 
 @pytest.fixture()
 def synthetic_dataset(tmp_path: Path) -> Path:
-    """Construit une mini-arborescence ``avec_labels/{cancer,normal}`` + ``sans_label/``.
+    """Build a miniature ``avec_labels/{cancer,normal}`` + ``sans_label/`` tree.
 
-    - 4 images cancer (intensité 200)
-    - 4 images normal (intensité 50)
-    - 6 images non labellisées : 3 « cancer-like », 3 « normal-like »
-    - 1 fichier corrompu pour vérifier la robustesse
+    - 4 cancer images, intensity 200
+    - 4 normal images, intensity 50
+    - 6 unlabelled images: 3 cancer-like, 3 normal-like
+    - 1 corrupt file, so the loader's reporting path is exercised
     """
     root = tmp_path / "mri_dataset_brain_cancer_oc"
     (root / "avec_labels" / "cancer").mkdir(parents=True)
@@ -37,7 +37,7 @@ def synthetic_dataset(tmp_path: Path) -> Path:
     for i in range(3):
         _write_synthetic_image(root / "sans_label" / f"u_normal_{i}.jpg", value=60)
 
-    # Fichier corrompu intentionnel
+    # A deliberately corrupt file: the loader must report it, not skip it silently.
     (root / "sans_label" / "broken.jpg").write_bytes(b"not a jpeg file")
 
     return root
@@ -45,10 +45,10 @@ def synthetic_dataset(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def synthetic_features() -> tuple[np.ndarray, np.ndarray]:
-    """Renvoie ``(features, truth)`` simulant deux clusters bien séparés.
+    """Return ``(features, truth)`` for two well-separated clusters.
 
-    50 points par cluster en 16 dimensions ; ``truth`` ne couvre que 20 % des
-    points (les autres sont NaN, simulant le jeu non labellisé).
+    Fifty points per cluster in sixteen dimensions. ``truth`` covers only 20% of them; the
+    rest are NaN, standing in for the unlabelled pool.
     """
     rng = np.random.default_rng(0)
     cluster_a = rng.normal(loc=-2.0, scale=0.5, size=(50, 16))

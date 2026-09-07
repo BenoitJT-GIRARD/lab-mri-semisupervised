@@ -1,4 +1,4 @@
-"""Helpers de visualisation : grilles d'images, projections 2D, ROC, CM."""
+"""Plotting helpers: image grids, 2D projections, ROC curves, confusion matrices."""
 
 from __future__ import annotations
 
@@ -26,12 +26,13 @@ sns.set_theme(context="notebook", style="whitegrid")
 def plot_image_grid(
     paths: Iterable[str | Path],
     titles: Iterable[str] | None = None,
+    *,
     cols: int = 5,
     figsize_per_cell: tuple[float, float] = (2.4, 2.4),
     cmap: str = "gray",
     save_path: Path | None = None,
 ) -> plt.Figure:
-    """Affiche une grille d'images. Renvoie la figure."""
+    """Draw a grid of images and return the figure."""
     paths_list = [Path(p) for p in paths]
     titles_list = list(titles) if titles is not None else [p.name for p in paths_list]
     n = len(paths_list)
@@ -60,14 +61,14 @@ def plot_pixel_stats(
     stats: pd.DataFrame,
     save_path: Path | None = None,
 ) -> plt.Figure:
-    """Histogrammes des statistiques de pixels (mean / std)."""
+    """Histograms of the per-image pixel statistics."""
     fig, axes = plt.subplots(1, 2, figsize=(11, 4))
     sns.histplot(stats["mean"], bins=30, ax=axes[0], color="#3182bd")
-    axes[0].set_title("Distribution de la luminance moyenne")
-    axes[0].set_xlabel("intensité moyenne (0-1)")
+    axes[0].set_title("Distribution of the mean luminance")
+    axes[0].set_xlabel("mean intensity (0-1)")
     sns.histplot(stats["std"], bins=30, ax=axes[1], color="#fd8d3c")
-    axes[1].set_title("Distribution de l'écart-type des pixels")
-    axes[1].set_xlabel("écart-type")
+    axes[1].set_title("Distribution of the per-image pixel standard deviation")
+    axes[1].set_xlabel("standard deviation")
     fig.tight_layout()
     if save_path is not None:
         save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -79,10 +80,10 @@ def plot_equalization(
     image_path: str | Path,
     save_path: Path | None = None,
 ) -> plt.Figure:
-    """Compare une IRM avant / après égalisation d'histogramme.
+    """Show one MRI before and after histogram equalisation.
 
-    On affiche l'image d'origine et l'image égalisée, puis les deux
-    histogrammes d'intensité, pour visualiser l'étalement du contraste.
+    The two images side by side, then the two intensity histograms, so the stretch is
+    visible rather than asserted.
     """
     with Image.open(image_path) as img:
         original = np.asarray(img.convert("L"))
@@ -97,10 +98,10 @@ def plot_equalization(
     axes[0][1].axis("off")
     axes[1][0].hist(original.ravel(), bins=256, range=(0, 255), color="#3182bd")
     axes[1][0].set_title("Histogramme d'origine")
-    axes[1][0].set_xlabel("intensité")
+    axes[1][0].set_xlabel("intensity")
     axes[1][1].hist(equalized.ravel(), bins=256, range=(0, 255), color="#fd8d3c")
     axes[1][1].set_title("Histogramme égalisé")
-    axes[1][1].set_xlabel("intensité")
+    axes[1][1].set_xlabel("intensity")
     fig.tight_layout()
     if save_path is not None:
         save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -111,12 +112,13 @@ def plot_equalization(
 def project_2d(
     features: np.ndarray,
     method: str = "tsne",
+    *,
     seed: int = 42,
     perplexity: float = 30.0,
     n_neighbors: int = 15,
     min_dist: float = 0.1,
 ) -> np.ndarray:
-    """Projette ``features`` en 2D via t-SNE ou UMAP."""
+    """Project ``features`` down to two dimensions, with t-SNE or UMAP."""
     method = method.lower()
     if method == "tsne":
         model = TSNE(
@@ -129,7 +131,7 @@ def project_2d(
         return model.fit_transform(features)
     if method == "umap":
         if not HAS_UMAP:
-            raise RuntimeError("umap-learn n'est pas installé")
+            raise RuntimeError("umap-learn is not installed")
         model = umap.UMAP(
             n_components=2, n_neighbors=n_neighbors, min_dist=min_dist, random_state=seed
         )
@@ -157,10 +159,10 @@ def plot_2d_scatter(
     title: str,
     save_path: Path | None = None,
 ) -> plt.Figure:
-    """Nuage 2D coloré par label (catégoriel).
+    """A 2D scatter coloured by label.
 
-    Robuste aux ``None``, ``NaN``, chaînes vides : tout devient « unlabeled ».
-    Les couleurs hors palette de référence sont laissées au choix de Seaborn.
+    Tolerates ``None``, ``NaN`` and empty strings: they all become "unlabeled" rather than
+    crashing the plot or, worse, forming a silent category of their own.
     """
     cleaned = [_normalise_label(v) for v in labels]
     df = pd.DataFrame({"x": coords[:, 0], "y": coords[:, 1], "label": cleaned})
@@ -206,7 +208,7 @@ def plot_confusion_matrix(
     title: str = "Matrice de confusion",
     save_path: Path | None = None,
 ) -> plt.Figure:
-    """Heatmap d'une matrice de confusion."""
+    """Confusion matrix as a heatmap."""
     cm_arr = np.asarray(cm)
     fig, ax = plt.subplots(figsize=(4.6, 4))
     sns.heatmap(
@@ -253,11 +255,11 @@ def plot_roc_compare(
     title: str = "Courbes ROC — comparaison",
     save_path: Path | None = None,
 ) -> plt.Figure:
-    """Superpose plusieurs courbes ROC binaires sur un même graphique.
+    """Overlay several binary ROC curves on one axis.
 
-    ``curves`` associe un nom de stratégie à un couple ``(y_true, y_score)``
-    où ``y_score`` est la probabilité de la classe « cancer ». L'AUC est
-    rappelée dans la légende.
+    ``curves`` maps an arm name to ``(y_true, y_score)``, where ``y_score`` is the
+    probability of the positive class. The AUC goes in the legend, because a curve without
+    its number invites the reader to guess.
     """
     fig, ax = plt.subplots(figsize=(5.5, 4.6))
     for name, (y_true, y_score) in curves.items():
@@ -282,7 +284,7 @@ def plot_metrics_bar(
     title: str | None = None,
     save_path: Path | None = None,
 ) -> plt.Figure:
-    """Diagramme à barres pour comparer plusieurs runs sur une même métrique."""
+    """Bar chart comparing several runs on one metric."""
     df = pd.DataFrame(
         [{"run": name, metric_name: vals.get(metric_name, np.nan)} for name, vals in runs.items()]
     )
@@ -303,7 +305,7 @@ def plot_metrics_bar(
 
 
 def plot_history(history_df: pd.DataFrame, save_path: Path | None = None) -> plt.Figure:
-    """Courbes loss / accuracy par phase d'entraînement."""
+    """Loss and accuracy curves, split by training phase."""
     fig, axes = plt.subplots(1, 2, figsize=(11, 3.8))
     sns.lineplot(data=history_df, x="step", y="train_loss", hue="phase", ax=axes[0], marker="o")
     axes[0].set_title("Loss par phase")

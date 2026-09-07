@@ -1,8 +1,11 @@
-"""Extraction de features via un backbone pré-entraîné ImageNet.
+"""Embeddings from an ImageNet-pretrained backbone.
 
-L'API est volontairement simple : ``extract_features(records)`` renvoie une
-matrice ``(N, output_dim)`` accompagnée d'un DataFrame d'index. Les features
-sont mises en cache au format Parquet pour accélérer les itérations.
+``extract_features(records)`` returns an ``(N, output_dim)`` matrix and the index frame
+that names each row. The result is cached as Parquet, because re-encoding fifteen hundred
+images to try one clustering parameter is a waste of a GPU.
+
+The extraction is unsupervised and identical for every arm and every fold, which is why it
+can be done once, outside the protocol, without leaking anything.
 """
 
 from __future__ import annotations
@@ -17,17 +20,16 @@ from torch.utils.data import DataLoader
 from torchvision import models
 from tqdm.auto import tqdm
 
-from curelyticsia.config import FeatureConfig, device
-from curelyticsia.data.loader import ImageRecord
-from curelyticsia.data.preprocess import ImagePathsDataset, build_eval_transform
+from mri_semisupervised.config import FeatureConfig, device
+from mri_semisupervised.data.loader import ImageRecord
+from mri_semisupervised.data.preprocess import ImagePathsDataset, build_eval_transform
 
 
 def build_backbone(name: str = "resnet50", pretrained: bool = True) -> tuple[nn.Module, int]:
-    """Construit un extracteur de features (sans la tête classification).
+    """Build a feature extractor: the backbone with its classification head removed.
 
-    Renvoie ``(model, feature_dim)``. Les couches convolutionnelles sont gelées :
-    on ne fait pas d'entraînement à ce stade, juste une *forward* pour produire
-    des embeddings.
+    Returns ``(model, feature_dim)``. Nothing is trained at this stage: the weights are
+    frozen and the pass is forward-only, to turn images into vectors.
     """
     name_lower = name.lower()
     if name_lower == "resnet50":
@@ -54,14 +56,14 @@ def extract_features(
     use_cache: bool = True,
     progress: bool = True,
 ) -> tuple[np.ndarray, pd.DataFrame]:
-    """Calcule (ou recharge depuis le cache) la matrice de features.
+    """Compute the feature matrix, or read it back from the cache.
 
     Returns
     -------
     features : np.ndarray
-        Tableau ``(N, feature_dim)`` aligné avec ``index_df``.
+        An ``(N, feature_dim)`` array, row-aligned with ``index_df``.
     index_df : pd.DataFrame
-        Colonnes ``image_id``, ``path``, ``split``, ``label_name``, ``label_index``.
+        Columns ``image_id``, ``path``, ``split``, ``label_name``, ``label_index``.
     """
     if cfg is None:
         cfg = FeatureConfig()
@@ -118,7 +120,7 @@ def extract_features(
 
 
 def load_cached_features(cache_path: Path) -> tuple[np.ndarray, pd.DataFrame]:
-    """Recharge un fichier features parquet et renvoie ``(features, index_df)``."""
+    """Read a feature parquet back and return ``(features, index_df)``."""
     cached = pd.read_parquet(cache_path)
     feature_cols = [c for c in cached.columns if c.startswith("f_")]
     features = cached[feature_cols].to_numpy(dtype=np.float32)
