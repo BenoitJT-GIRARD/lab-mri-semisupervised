@@ -146,8 +146,8 @@ def cluster_confidence(features: np.ndarray, labels: np.ndarray) -> np.ndarray:
 def composition(pseudo: PseudoLabelSet) -> dict[str, float]:
     """What the clustering actually produced, in numbers the fold manifest can carry.
 
-    The jury saw 928 cancer against 478 normal on the original protocol, for a truth that
-    is 50/50, and noted the imbalance had been flagged and not treated. The protocol has
+    The original protocol produced 928 cancer against 478 normal, for a truth that is
+    50/50. The imbalance was noticed at the time and never acted on. The protocol has
     changed since; the question stayed unanswered because nothing recorded the answer.
 
     The share is taken over the labelled pseudo-labels alone. A fold where most of the pool

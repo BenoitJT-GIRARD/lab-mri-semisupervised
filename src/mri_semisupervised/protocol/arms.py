@@ -100,7 +100,7 @@ def _loader(
     )
 
 
-def _train_epoch(model, loader, optimiser, criterion, dev, max_steps=None) -> tuple[float, int]:
+def _train_epoch(model, loader, optimiser, criterion, dev, *, max_steps=None) -> tuple[float, int]:
     model.train()
     total, steps = 0.0, 0
     for batch, targets in loader:
@@ -187,7 +187,9 @@ def _pretrain(
             remaining = target_steps - steps
             if remaining <= 0:
                 break
-        loss, epoch_steps = _train_epoch(model, loader, optimiser, criterion, dev, remaining)
+        loss, epoch_steps = _train_epoch(
+            model, loader, optimiser, criterion, dev, max_steps=remaining
+        )
         if epoch_steps == 0:
             break
         steps += epoch_steps

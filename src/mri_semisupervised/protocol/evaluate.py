@@ -62,8 +62,8 @@ def threshold_at_sensitivity(
     ``choose_threshold`` maximises F1 on the positive class and breaks ties towards the
     false positive. That is defensible in general and it contradicts the frame this
     repository claims: on a screening problem the two errors do not cost the same, and F1
-    treats them as if they did. Both the external review and the jury noted that
-    ``recall_positive`` was computed and never governed a decision.
+    treats them as if they did. It was pointed out more than once, and independently, that
+    ``recall_positive`` was computed here and never governed a decision.
 
     So this is published beside the F1 threshold, not instead of it. The first serves the
     comparison between arms, where symmetry is what you want; the second serves the medical
