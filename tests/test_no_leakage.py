@@ -194,7 +194,7 @@ def test_the_inner_validation_never_comes_from_the_test_fold(wired, tmp_path: Pa
         assert set(call["inner_train"]).isdisjoint(call["inner_val"])
 
 
-def test_the_three_arms_of_a_fold_share_exactly_the_same_split(wired, tmp_path: Path) -> None:
+def test_every_arm_of_a_fold_shares_exactly_the_same_split(wired, tmp_path: Path) -> None:
     seen, _, _ = wired
     _run(CORRECTED, tmp_path / "out")
 
@@ -224,6 +224,8 @@ def test_the_pretraining_set_is_identical_for_the_semi_arm_and_its_control(
     for fold, arms in by_fold.items():
         assert arms["semi_supervised"] == arms["permuted_control"], f"fold {fold}"
         assert arms["supervised"] == [], "the baseline pre-trains on nothing"
+        # The filtered arm keeps a subset of the same images, never other ones.
+        assert set(arms["semi_supervised_confident"]) <= set(arms["semi_supervised"]), fold
 
 
 def test_every_evaluation_image_is_tested_once_per_repeat(wired, tmp_path: Path) -> None:
@@ -238,3 +240,15 @@ def test_every_evaluation_image_is_tested_once_per_repeat(wired, tmp_path: Path)
 
     for repeat, tested in per_repeat.items():
         assert sorted(tested) == sorted(labelled_ids), f"repeat {repeat} did not cover the set"
+
+
+def test_the_configured_arms_and_the_implemented_arms_cannot_drift() -> None:
+    """ProtocolConfig.arms is spelled out; ARMS is the truth. They must agree.
+
+    Caught in the act on 2026-09-03: the fourth arm was added to ARMS and not to the
+    config, so the experiment ran three arms while every test passed.
+    """
+    from mri_semisupervised.config import ProtocolConfig
+    from mri_semisupervised.protocol.arms import ARMS
+
+    assert ProtocolConfig().arms == ARMS

@@ -1,0 +1,128 @@
+"""End-to-end checks of one arm on one fold, on a handful of tiny images.
+
+The leakage suite watches the orchestration with a spy, so ``run_arm`` itself is never
+executed there. These tests run it for real — small enough to stay in the suite, big enough
+to catch a fourth arm that raises on its first fold after forty minutes of GPU time.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+if importlib.util.find_spec("torch") is None:  # pragma: no cover
+    pytest.skip("torch indisponible", allow_module_level=True)
+
+from mri_semisupervised.config import TrainingConfig
+from mri_semisupervised.protocol.arms import (
+    PERMUTED_CONTROL,
+    SEMI_SUPERVISED,
+    SEMI_SUPERVISED_CONFIDENT,
+    SUPERVISED,
+    budget_steps,
+    run_arm,
+)
+from mri_semisupervised.protocol.pseudo_labels import PseudoLabelSet
+
+TINY = TrainingConfig(
+    architecture="resnet18",
+    batch_size=4,
+    epochs_weak=1,
+    epochs_strong=1,
+    early_stopping_patience=1,
+    confidence_quantiles=(0.0, 0.5),
+)
+
+
+@pytest.fixture()
+def fold(synthetic_dataset: Path):
+    """One fold built from the synthetic tree: eight labelled images, six in the pool."""
+    from mri_semisupervised.data.loader import discover_images
+
+    records, _ = discover_images(synthetic_dataset)
+    paths_by_id = {r.image_id: r.path for r in records}
+
+    labelled = [r for r in records if r.split == "labeled"]
+    pool = [r for r in records if r.split != "labeled"]
+
+    inner_train = [(r.image_id, r.label_index) for r in labelled[:2] + labelled[-2:]]
+    inner_val = [(r.image_id, r.label_index) for r in labelled[2:4] + labelled[-4:-2]]
+    test = inner_val
+
+    rng = np.random.default_rng(0)
+    pseudo = PseudoLabelSet(
+        method_name="KMeans",
+        ari_on_train=0.4,
+        image_ids=np.array([r.image_id for r in pool], dtype=object),
+        labels=np.array([i % 2 for i in range(len(pool))]),
+        confidence=rng.uniform(0.1, 0.9, len(pool)),
+        n_noise=1,
+    )
+    return paths_by_id, inner_train, inner_val, test, pseudo
+
+
+def _run(arm, fold, **kwargs):
+    paths_by_id, inner_train, inner_val, test, pseudo = fold
+    return run_arm(
+        arm,
+        fold_name="f0",
+        paths_by_id=paths_by_id,
+        inner_train=inner_train,
+        inner_val=inner_val,
+        test=test,
+        pseudo=None if arm == SUPERVISED else pseudo,
+        cfg=TINY,
+        seed=0,
+        **kwargs,
+    )
+
+
+def test_the_budget_counts_the_steps_the_unfiltered_pool_would_take() -> None:
+    assert budget_steps(10, TrainingConfig(batch_size=4, epochs_weak=3)) == 9
+    assert budget_steps(8, TrainingConfig(batch_size=4, epochs_weak=2)) == 4
+    assert budget_steps(0, TrainingConfig()) == 0
+
+
+def test_the_baseline_pretrains_on_nothing(fold) -> None:
+    result = _run(SUPERVISED, fold)
+    assert result.pretrain_steps == 0
+    assert result.pretrain_image_ids == ()
+    assert result.confidence_quantile is None
+
+
+def test_the_confident_arm_reports_the_quantile_it_chose(fold) -> None:
+    result = _run(SEMI_SUPERVISED_CONFIDENT, fold)
+    assert result.confidence_quantile in TINY.confidence_quantiles
+    assert 0 < result.n_pseudo_used <= len(fold[4])
+
+
+def test_the_confident_arm_spends_the_same_budget_as_the_unfiltered_one(fold) -> None:
+    """Filtering shrinks the pool. Equal epochs would mean unequal gradient updates, and a
+    budget confound between arms is the defect the leak-free protocol removed once."""
+    plain = _run(SEMI_SUPERVISED, fold)
+    confident = _run(SEMI_SUPERVISED_CONFIDENT, fold)
+
+    assert confident.pretrain_steps == plain.pretrain_steps
+
+
+def test_the_control_pretrains_on_the_same_images_as_the_semi_arm(fold) -> None:
+    plain = _run(SEMI_SUPERVISED, fold)
+    control = _run(PERMUTED_CONTROL, fold)
+
+    assert set(plain.pretrain_image_ids) == set(control.pretrain_image_ids)
+
+
+def test_every_arm_scores_the_test_images_and_only_those(fold) -> None:
+    _, _, _, test, _ = fold
+    for arm in (SUPERVISED, SEMI_SUPERVISED, SEMI_SUPERVISED_CONFIDENT, PERMUTED_CONTROL):
+        result = _run(arm, fold)
+        assert len(result.y_score) == len(test)
+        assert ((result.y_score >= 0.0) & (result.y_score <= 1.0)).all()
+
+
+def test_an_unknown_arm_is_refused_by_name(fold) -> None:
+    with pytest.raises(ValueError, match="unknown arm"):
+        _run("semi_supervised_confident_v2", fold)

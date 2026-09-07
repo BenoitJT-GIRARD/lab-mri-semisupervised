@@ -41,7 +41,7 @@ from mri_semisupervised.config import (
     set_global_seeds,
 )
 from mri_semisupervised.data.manifest import LABELLED, UNLABELLED, dataset_fingerprint
-from mri_semisupervised.protocol.arms import SUPERVISED, run_arm
+from mri_semisupervised.protocol.arms import PRETRAINING_ARMS, run_arm
 from mri_semisupervised.protocol.evaluate import evaluate_fold
 from mri_semisupervised.protocol.pseudo_labels import (
     PseudoLabelSet,
@@ -233,7 +233,7 @@ def run_experiment(
                 inner_train=inner_train,
                 inner_val=inner_val,
                 test=test,
-                pseudo=None if arm == SUPERVISED else pseudo,
+                pseudo=pseudo if arm in PRETRAINING_ARMS else None,
                 cfg=training,
                 seed=derive_seed(spec.seed, "arm", arm),
             )
@@ -247,6 +247,8 @@ def run_experiment(
                     "split": spec.fold,
                     "arm": arm,
                     "best_epoch": result.best_epoch,
+                    "confidence_quantile": result.confidence_quantile,
+                    "n_pseudo_used": result.n_pseudo_used,
                     "pretrain_steps": result.pretrain_steps,
                     "finetune_steps": result.finetune_steps,
                     **metrics,

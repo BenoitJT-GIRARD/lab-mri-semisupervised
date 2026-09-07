@@ -20,6 +20,7 @@ eighty images selects the most overfit one.
 from __future__ import annotations
 
 import copy
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -35,12 +36,18 @@ from mri_semisupervised.data.preprocess import (
     build_train_transform,
 )
 from mri_semisupervised.models.semi_supervised import build_classifier
-from mri_semisupervised.protocol.pseudo_labels import PseudoLabelSet, permute
+from mri_semisupervised.protocol.pseudo_labels import (
+    PseudoLabelSet,
+    filter_by_confidence,
+    permute,
+)
 
 SUPERVISED = "supervised"
 SEMI_SUPERVISED = "semi_supervised"
+SEMI_SUPERVISED_CONFIDENT = "semi_supervised_confident"
 PERMUTED_CONTROL = "permuted_control"
-ARMS = (SUPERVISED, SEMI_SUPERVISED, PERMUTED_CONTROL)
+ARMS = (SUPERVISED, SEMI_SUPERVISED, SEMI_SUPERVISED_CONFIDENT, PERMUTED_CONTROL)
+PRETRAINING_ARMS = (SEMI_SUPERVISED, SEMI_SUPERVISED_CONFIDENT, PERMUTED_CONTROL)
 
 
 @dataclass
@@ -57,6 +64,11 @@ class ArmResult:
     pretrain_steps: int
     finetune_steps: int
     pretrain_image_ids: tuple[str, ...] = ()
+    #: Quantile of the confidence distribution the arm kept, when it filters. ``None``
+    #: for every other arm; ``0.0`` when the filtering arm chose not to filter.
+    confidence_quantile: float | None = None
+    #: Pseudo-labels actually pre-trained on, after filtering.
+    n_pseudo_used: int = 0
     history: list[dict] = field(default_factory=list)
 
     @property
@@ -88,10 +100,12 @@ def _loader(
     )
 
 
-def _train_epoch(model, loader, optimiser, criterion, dev) -> tuple[float, int]:
+def _train_epoch(model, loader, optimiser, criterion, dev, max_steps=None) -> tuple[float, int]:
     model.train()
     total, steps = 0.0, 0
     for batch, targets in loader:
+        if max_steps is not None and steps >= max_steps:
+            break
         batch, targets = batch.to(dev), targets.to(dev)
         optimiser.zero_grad(set_to_none=True)
         loss = criterion(model(batch), targets)
@@ -127,6 +141,18 @@ def _validation_score(y_true: np.ndarray, y_score: np.ndarray) -> float:
     return float(roc_auc_score(y_true, y_score))
 
 
+def budget_steps(n_items: int, cfg: TrainingConfig) -> int:
+    """The number of pre-training steps the unfiltered pool would take.
+
+    Expressed in steps, not epochs, and that is the whole point. Filtering shrinks the pool,
+    so an equal number of *epochs* would be an unequal number of gradient updates — and a
+    budget confound between the arms is exactly the defect the leak-free protocol removed
+    once already.
+    """
+    per_epoch = math.ceil(n_items / cfg.batch_size) if n_items else 0
+    return per_epoch * cfg.epochs_weak
+
+
 def _pretrain(
     model: nn.Module,
     pseudo: PseudoLabelSet,
@@ -135,8 +161,14 @@ def _pretrain(
     cfg: TrainingConfig,
     dev: torch.device,
     seed: int,
+    target_steps: int | None = None,
 ) -> tuple[int, list[dict]]:
-    """Pre-train on pseudo-labels; return the number of steps and the history."""
+    """Pre-train on pseudo-labels; return the number of steps and the history.
+
+    With ``target_steps`` the loop runs until that many gradient updates have happened,
+    passing over a reduced pool as many times as it takes and stopping mid-epoch on the
+    last one. Without it, the usual ``epochs_weak`` passes.
+    """
     paths = [paths_by_id[i] for i in pseudo.image_ids]
     loader = _loader(paths, list(pseudo.labels), cfg, train=True, seed=seed)
     optimiser = torch.optim.AdamW(
@@ -144,9 +176,20 @@ def _pretrain(
     )
     criterion = nn.CrossEntropyLoss()
 
-    steps, history = 0, []
-    for epoch in range(1, cfg.epochs_weak + 1):
-        loss, epoch_steps = _train_epoch(model, loader, optimiser, criterion, dev)
+    steps, history, epoch = 0, [], 0
+    while True:
+        epoch += 1
+        if target_steps is None:
+            if epoch > cfg.epochs_weak:
+                break
+            remaining = None
+        else:
+            remaining = target_steps - steps
+            if remaining <= 0:
+                break
+        loss, epoch_steps = _train_epoch(model, loader, optimiser, criterion, dev, remaining)
+        if epoch_steps == 0:
+            break
         steps += epoch_steps
         history.append({"phase": "pretrain", "epoch": epoch, "train_loss": loss})
     return steps, history
@@ -171,18 +214,10 @@ def run_arm(
     """
     if arm not in ARMS:
         raise ValueError(f"unknown arm: {arm}")
-    if arm != SUPERVISED and pseudo is None:
+    if arm in PRETRAINING_ARMS and pseudo is None:
         raise ValueError(f"arm {arm} needs pseudo-labels")
 
-    torch.manual_seed(seed)
     dev = torch.device(device())
-    model = build_classifier(cfg.architecture, cfg.num_classes).to(dev)
-
-    pretrain_steps, history, pretrain_ids = 0, [], ()
-    if arm in (SEMI_SUPERVISED, PERMUTED_CONTROL):
-        used = pseudo if arm == SEMI_SUPERVISED else permute(pseudo, seed)
-        pretrain_ids = tuple(used.image_ids.tolist())
-        pretrain_steps, history = _pretrain(model, used, paths_by_id, cfg=cfg, dev=dev, seed=seed)
 
     train_loader = _loader(
         [paths_by_id[i] for i, _ in inner_train],
@@ -198,6 +233,60 @@ def run_arm(
         train=False,
         seed=seed,
     )
+
+    def fresh_model() -> nn.Module:
+        # Same seed for every arm and every candidate: the starting weights are shared, so
+        # a difference between arms cannot come from where they started.
+        torch.manual_seed(seed)
+        return build_classifier(cfg.architecture, cfg.num_classes).to(dev)
+
+    model = fresh_model()
+    pretrain_steps, history, pretrain_ids = 0, [], ()
+    quantile, n_pseudo_used = None, 0
+
+    if arm in (SEMI_SUPERVISED, PERMUTED_CONTROL):
+        used = pseudo if arm == SEMI_SUPERVISED else permute(pseudo, seed)
+        pretrain_ids = tuple(used.image_ids.tolist())
+        n_pseudo_used = len(used)
+        pretrain_steps, history = _pretrain(model, used, paths_by_id, cfg=cfg, dev=dev, seed=seed)
+
+    elif arm == SEMI_SUPERVISED_CONFIDENT:
+        # The answer to "your pseudo-labels were simply too noisy". Each quantile gets the
+        # same step budget as the unfiltered arm, and the one that scores best on the
+        # inner validation is kept. The test fold takes no part in this choice.
+        budget = budget_steps(len(pseudo), cfg)
+        best_score, best_state = -np.inf, None
+        for candidate in cfg.confidence_quantiles:
+            subset = filter_by_confidence(pseudo, candidate)
+            trial = fresh_model()
+            steps, trial_history = _pretrain(
+                trial, subset, paths_by_id, cfg=cfg, dev=dev, seed=seed, target_steps=budget
+            )
+            val_true, val_score = _predict(trial, val_loader, dev)
+            score = _validation_score(val_true, val_score)
+            trial_history.append(
+                {
+                    "phase": "confidence_search",
+                    "quantile": candidate,
+                    "n_pseudo": len(subset),
+                    "pretrain_steps": steps,
+                    "val_auc": score,
+                }
+            )
+            if not np.isnan(score) and score > best_score:
+                best_score = score
+                best_state = copy.deepcopy(trial.state_dict())
+                quantile, n_pseudo_used = float(candidate), len(subset)
+                pretrain_steps, history = steps, trial_history
+                pretrain_ids = tuple(subset.image_ids.tolist())
+            elif best_state is None:
+                # Every candidate so far scored nan — a single-class validation split. Keep
+                # the first one rather than returning an untrained model.
+                best_state = copy.deepcopy(trial.state_dict())
+                quantile, n_pseudo_used = float(candidate), len(subset)
+                pretrain_steps, history = steps, trial_history
+                pretrain_ids = tuple(subset.image_ids.tolist())
+        model.load_state_dict(best_state)
     test_loader = _loader(
         [paths_by_id[i] for i, _ in test],
         [y for _, y in test],
@@ -248,8 +337,20 @@ def run_arm(
         pretrain_steps=pretrain_steps,
         finetune_steps=finetune_steps,
         pretrain_image_ids=pretrain_ids,
+        confidence_quantile=quantile,
+        n_pseudo_used=n_pseudo_used,
         history=history,
     )
 
 
-__all__ = ["ARMS", "PERMUTED_CONTROL", "SEMI_SUPERVISED", "SUPERVISED", "ArmResult", "run_arm"]
+__all__ = [
+    "ARMS",
+    "PERMUTED_CONTROL",
+    "PRETRAINING_ARMS",
+    "SEMI_SUPERVISED",
+    "SEMI_SUPERVISED_CONFIDENT",
+    "SUPERVISED",
+    "ArmResult",
+    "budget_steps",
+    "run_arm",
+]

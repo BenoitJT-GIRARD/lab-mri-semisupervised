@@ -96,6 +96,10 @@ class TrainingConfig:
     # threshold. Never taken from the test fold.
     inner_val_fraction: float = 0.25
     early_stopping_patience: int = 5
+    # Quantiles of the pseudo-label confidence tried by the confidence-filtered arm. The
+    # one that scores best on the inner validation is kept. Zero is in the grid on
+    # purpose: the arm must be able to choose not to filter, and to say so.
+    confidence_quantiles: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75)
 
 
 @dataclass(frozen=True)
@@ -106,7 +110,16 @@ class ProtocolConfig:
     n_repeats: int = 5
     seed: int = SEED
     n_bootstrap: int = 2000
-    arms: tuple[str, ...] = ("supervised", "semi_supervised", "permuted_control")
+    # Must match ``protocol.arms.ARMS`` exactly. It is spelled out rather than
+    # imported because ``arms`` imports this module, and a test asserts the two agree —
+    # adding an arm here and forgetting this line ran a three-arm experiment while the
+    # code believed it had four.
+    arms: tuple[str, ...] = (
+        "supervised",
+        "semi_supervised",
+        "semi_supervised_confident",
+        "permuted_control",
+    )
 
 
 def ensure_dirs() -> None:
