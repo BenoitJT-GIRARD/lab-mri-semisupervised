@@ -1,0 +1,45 @@
+name: CI
+
+# No `schedule` trigger: this repository is finished, and a nightly build that nobody
+# reads would burn minutes to turn red on its own one day.
+on:
+  push:
+    branches: ["main", "feat/**"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # Resolves to the +cpu torch wheels here — see the index markers in pyproject.toml.
+      # The runner has no GPU, and the CUDA build would add about three gigabytes.
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      # Checks only. Nothing here rewrites the tree: a job that formats before it
+      # verifies always passes, and tells you nothing.
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Bandit
+        run: uv run python -m bandit -c pyproject.toml -r src
+
+      # The suite runs on synthetic fixtures and tmp_path only: it never reads
+      # data/, so it does not need the MRI images that are not in the repository.
+      - name: Pytest
+        run: uv run python -m pytest
