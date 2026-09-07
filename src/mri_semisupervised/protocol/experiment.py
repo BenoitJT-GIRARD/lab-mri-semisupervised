@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import json
 import platform
-import subprocess
+import shutil
+import subprocess  # nosec B404 — one call, on a constant argv; see _git_revision
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -62,11 +63,20 @@ class ExperimentResult:
 
 
 def _git_revision() -> str:
+    """The commit the run was produced from, recorded in the manifest.
+
+    `git` is resolved to an absolute path first. Calling it as a bare name would let
+    whatever comes first on PATH answer instead — the argv is a constant, so this is the
+    only part of the call that an environment could subvert.
+    """
+    git = shutil.which("git")
+    if git is None:
+        return "unknown"
     try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+        return subprocess.check_output(  # nosec B603 — absolute path, constant argv
+            [git, "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
         ).strip()
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         return "unknown"
 
 
