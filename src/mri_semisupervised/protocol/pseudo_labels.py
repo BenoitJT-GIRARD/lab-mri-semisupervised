@@ -19,7 +19,7 @@ resource the whole exercise claims to economise.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
@@ -46,6 +46,12 @@ class PseudoLabelSet:
     ari_on_train: float
     image_ids: np.ndarray
     labels: np.ndarray
+    #: Margin to the nearest other cluster, in [0, 1], one per pseudo-label.
+    confidence: np.ndarray = field(default_factory=lambda: np.zeros(0))
+    #: Pool images the alignment could not name, dropped before this set was built. They
+    #: are counted because otherwise a fold reports what survived and never what was lost,
+    #: which is the more interesting half on a fold that clustered badly.
+    n_noise: int = 0
     candidates: dict[str, float] = field(default_factory=dict)
     failed_candidates: dict[str, str] = field(default_factory=dict)
 
@@ -88,6 +94,103 @@ def align_by_majority(
     for cluster, klass in mapping.items():
         aligned[np.asarray(cluster_labels) == cluster] = klass
     return aligned
+
+
+def cluster_confidence(features: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    """How far inside its cluster each point sits, as a margin in ``[0, 1]``.
+
+    ``1 - d(i, c) / d(i, c2)`` where ``c`` is the point own cluster centroid and ``c2`` the
+    nearest other one. Zero for a point equidistant from two clusters, near one at an
+    isolated centre, zero for noise, and zero when there is only one cluster to belong to.
+
+    The centroid is empirical, computed from the points themselves, for every method alike.
+    Two reasons rather than one: :class:`ClusteringResult` does not carry its estimator, so
+    ``cluster_centers_`` is not available; and the chosen method varies from fold to fold,
+    so a definition that changed with the method would not be comparable across the folds
+    it has to be compared across.
+
+    A point is excluded from its own centroid. Without that, a point drags the centroid it
+    is measured against towards itself and scores as more central than it is — negligible
+    on a cluster of five hundred points, large enough to invert the ranking on the small
+    clusters DBSCAN produces.
+    """
+    features = np.asarray(features, dtype=float)
+    labels = np.asarray(labels)
+    confidence = np.zeros(len(labels), dtype=float)
+
+    named = np.unique(labels[labels != NOISE])
+    if len(named) < 2:
+        return confidence
+
+    sums = np.vstack([features[labels == c].sum(axis=0) for c in named])
+    sizes = np.array([int((labels == c).sum()) for c in named])
+    centroids = sums / sizes[:, None]
+    distances = np.linalg.norm(features[:, None, :] - centroids[None, :, :], axis=2)
+
+    for position, cluster in enumerate(named):
+        mask = labels == cluster
+        size = sizes[position]
+        if not mask.any():
+            continue
+        if size > 1:
+            own_centroid = (sums[position] - features[mask]) / (size - 1)
+            own = np.linalg.norm(features[mask] - own_centroid, axis=1)
+        else:
+            own = distances[mask, position]
+        others = np.delete(distances[mask], position, axis=1).min(axis=1)
+        safe = np.where(others > 0, others, 1.0)
+        confidence[mask] = np.clip(1.0 - own / safe, 0.0, 1.0)
+    return confidence
+
+
+def composition(pseudo: PseudoLabelSet) -> dict[str, float]:
+    """What the clustering actually produced, in numbers the fold manifest can carry.
+
+    The jury saw 928 cancer against 478 normal on the original protocol, for a truth that
+    is 50/50, and noted the imbalance had been flagged and not treated. The protocol has
+    changed since; the question stayed unanswered because nothing recorded the answer.
+
+    The share is taken over the labelled pseudo-labels alone. A fold where most of the pool
+    landed in an unalignable cluster has a share that says nothing about the two classes,
+    and dividing by the total would hide that behind a small number instead of showing it
+    beside ``n_pseudo_noise``.
+    """
+    labels = np.asarray(pseudo.labels)
+    negative = int((labels == 0).sum())
+    positive = int((labels == 1).sum())
+    total = negative + positive
+    return {
+        "n_pseudo_negative": negative,
+        "n_pseudo_positive": positive,
+        "n_pseudo_noise": int(pseudo.n_noise),
+        "pseudo_positive_share": (positive / total) if total else float("nan"),
+    }
+
+
+def filter_by_confidence(pseudo: PseudoLabelSet, quantile: float) -> PseudoLabelSet:
+    """Keep the pseudo-labels above the given quantile of the confidence distribution.
+
+    ``quantile=0`` keeps everything, which is a real option and not a degenerate one: the
+    arm must be able to choose not to filter, and to say so in its manifest.
+
+    An empty pool is never returned. A quantile that would drop every point leaves the most
+    confident one, because a pre-training set of size zero is not the same experiment as a
+    pre-training set of size one — it would silently turn the arm into its own baseline.
+    """
+    if len(pseudo) == 0 or quantile <= 0.0:
+        return pseudo
+
+    threshold = float(np.quantile(pseudo.confidence, min(quantile, 1.0)))
+    keep = pseudo.confidence >= threshold
+    if not keep.any():
+        keep = pseudo.confidence >= pseudo.confidence.max()
+
+    return replace(
+        pseudo,
+        image_ids=pseudo.image_ids[keep],
+        labels=pseudo.labels[keep],
+        confidence=pseudo.confidence[keep],
+    )
 
 
 def _candidates(features: np.ndarray, seed: int, cfg: ClusteringConfig):
@@ -186,11 +289,14 @@ def fit_pseudo_labels(
     # of the copies of evaluation images, nothing labelled can appear here; when it has
     # not — the legacy protocol — the copies come through, and that is the leak.
     keep = is_pool & (aligned != NOISE)
+    confidence = cluster_confidence(subset, best.labels)
     return PseudoLabelSet(
         method_name=best.name,
         ari_on_train=scored[best.name],
         image_ids=usable_ids[keep],
         labels=aligned[keep].astype(int),
+        confidence=confidence[keep],
+        n_noise=int((is_pool & (aligned == NOISE)).sum()),
         candidates=scored,
         failed_candidates=failures,
     )
@@ -207,14 +313,7 @@ def permute(pseudo: PseudoLabelSet, seed: int) -> PseudoLabelSet:
     rng = np.random.default_rng(seed)
     shuffled = pseudo.labels.copy()
     rng.shuffle(shuffled)
-    return PseudoLabelSet(
-        method_name=f"{pseudo.method_name}+permuted",
-        ari_on_train=pseudo.ari_on_train,
-        image_ids=pseudo.image_ids,
-        labels=shuffled,
-        candidates=pseudo.candidates,
-        failed_candidates=pseudo.failed_candidates,
-    )
+    return replace(pseudo, method_name=f"{pseudo.method_name}+permuted", labels=shuffled)
 
 
 def to_frame(pseudo: PseudoLabelSet) -> pd.DataFrame:
@@ -226,6 +325,9 @@ __all__ = [
     "NOISE",
     "PseudoLabelSet",
     "align_by_majority",
+    "cluster_confidence",
+    "composition",
+    "filter_by_confidence",
     "fit_pseudo_labels",
     "permute",
     "to_frame",

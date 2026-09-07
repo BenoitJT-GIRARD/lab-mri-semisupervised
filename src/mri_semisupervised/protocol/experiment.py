@@ -43,7 +43,11 @@ from mri_semisupervised.config import (
 from mri_semisupervised.data.manifest import LABELLED, UNLABELLED, dataset_fingerprint
 from mri_semisupervised.protocol.arms import SUPERVISED, run_arm
 from mri_semisupervised.protocol.evaluate import evaluate_fold
-from mri_semisupervised.protocol.pseudo_labels import PseudoLabelSet, fit_pseudo_labels
+from mri_semisupervised.protocol.pseudo_labels import (
+    PseudoLabelSet,
+    composition,
+    fit_pseudo_labels,
+)
 from mri_semisupervised.protocol.splits import derive_seed, inner_split, outer_folds
 
 CORRECTED = "corrected"
@@ -201,6 +205,23 @@ def run_experiment(
                 "pseudo_ari_on_train": pseudo.ari_on_train if pseudo else None,
                 "n_pseudo": len(pseudo) if pseudo else 0,
                 "failed_candidates": (";".join(sorted(pseudo.failed_candidates)) if pseudo else ""),
+                # What the clustering produced, not only how much of it survived. In
+                # the legacy mode these four numbers are identical across every fold,
+                # because the pseudo-labels are fitted once outside the folds — which
+                # is itself the thing that mode exists to show.
+                **(
+                    composition(pseudo)
+                    if pseudo
+                    else dict.fromkeys(
+                        (
+                            "n_pseudo_negative",
+                            "n_pseudo_positive",
+                            "n_pseudo_noise",
+                            "pseudo_positive_share",
+                        ),
+                        None,
+                    )
+                ),
             }
         )
 

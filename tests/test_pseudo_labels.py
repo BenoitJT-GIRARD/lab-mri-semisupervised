@@ -13,7 +13,11 @@ import pytest
 
 from mri_semisupervised.protocol.pseudo_labels import (
     NOISE,
+    PseudoLabelSet,
     align_by_majority,
+    cluster_confidence,
+    composition,
+    filter_by_confidence,
     fit_pseudo_labels,
     permute,
 )
@@ -145,3 +149,113 @@ def test_the_permutation_keeps_the_distribution_and_destroys_the_pairing() -> No
     assert np.array_equal(controlled.image_ids, pseudo.image_ids)
     assert sorted(controlled.labels) == sorted(pseudo.labels)
     assert not np.array_equal(controlled.labels, pseudo.labels)
+
+
+# --- Composition des pseudo-labels (R5) -----------------------------------
+
+
+def _set(labels, confidence=None) -> PseudoLabelSet:
+    labels = np.asarray(labels)
+    return PseudoLabelSet(
+        method_name="KMeans",
+        ari_on_train=0.3,
+        image_ids=np.array([f"i{n}" for n in range(len(labels))], dtype=object),
+        labels=labels,
+        confidence=np.asarray(confidence if confidence is not None else [0.5] * len(labels)),
+        n_noise=0,
+    )
+
+
+def test_the_composition_counts_each_class_and_the_dropped_noise() -> None:
+    pseudo = _set([0, 1, 1])
+    pseudo = PseudoLabelSet(**{**pseudo.__dict__, "n_noise": 2})
+
+    out = composition(pseudo)
+    assert out["n_pseudo_negative"] == 1
+    assert out["n_pseudo_positive"] == 2
+    assert out["n_pseudo_noise"] == 2
+    assert out["pseudo_positive_share"] == pytest.approx(2 / 3)
+
+
+def test_the_share_is_nan_when_no_pseudo_label_survives() -> None:
+    out = composition(_set([]))
+    assert out["n_pseudo_positive"] == 0
+    assert np.isnan(out["pseudo_positive_share"])
+
+
+def test_the_real_fold_reports_a_composition_that_sums_to_its_length() -> None:
+    features, ids, truth = _two_blobs()
+    train_ids, train_labels, _, unlabelled_ids = _fold(ids, truth)
+
+    pseudo = fit_pseudo_labels(features, ids, unlabelled_ids, train_ids, train_labels, seed=0)
+    out = composition(pseudo)
+
+    assert out["n_pseudo_negative"] + out["n_pseudo_positive"] == len(pseudo)
+    assert 0.0 <= out["pseudo_positive_share"] <= 1.0
+
+
+# --- Confiance et filtrage (R6) -------------------------------------------
+
+
+def test_confidence_is_near_zero_midway_and_high_at_a_centre() -> None:
+    """A point equidistant from two clusters carries no information about either."""
+    features = np.array([[0.0], [0.2], [10.0], [9.8], [5.0]])
+    labels = np.array([0, 0, 1, 1, 0])
+
+    conf = cluster_confidence(features, labels)
+
+    assert conf[4] < 0.10, "the midway point must score near zero"
+    assert conf[0] > 0.50, "a point at a centre must score high"
+
+
+def test_a_noise_point_carries_no_confidence() -> None:
+    conf = cluster_confidence(np.array([[0.0], [1.0], [50.0]]), np.array([0, 0, NOISE]))
+    assert conf[2] == 0.0
+
+
+def test_a_single_cluster_gives_no_confidence_at_all() -> None:
+    """With nothing to be nearer to, the margin is undefined — zero, not one."""
+    conf = cluster_confidence(np.array([[0.0], [1.0], [2.0]]), np.array([0, 0, 0]))
+    assert (conf == 0.0).all()
+
+
+def test_filtering_at_quantile_zero_keeps_everything() -> None:
+    pseudo = _set([0, 1, 1], confidence=[0.1, 0.5, 0.9])
+    assert len(filter_by_confidence(pseudo, 0.0)) == 3
+
+
+def test_filtering_drops_the_least_confident_and_keeps_the_pairing() -> None:
+    pseudo = _set([0, 1, 1], confidence=[0.1, 0.5, 0.9])
+
+    kept = filter_by_confidence(pseudo, 0.5)
+
+    assert list(kept.image_ids) == ["i1", "i2"]
+    assert list(kept.labels) == [1, 1]
+    assert list(kept.confidence) == [0.5, 0.9]
+
+
+def test_filtering_never_empties_the_pool() -> None:
+    """A quantile that would drop everything must leave the most confident point."""
+    pseudo = _set([0, 1], confidence=[0.4, 0.4])
+    assert len(filter_by_confidence(pseudo, 1.0)) >= 1
+
+
+def test_a_fitted_fold_carries_one_confidence_per_pseudo_label() -> None:
+    features, ids, truth = _two_blobs()
+    train_ids, train_labels, _, unlabelled_ids = _fold(ids, truth)
+
+    pseudo = fit_pseudo_labels(features, ids, unlabelled_ids, train_ids, train_labels, seed=0)
+
+    assert pseudo.confidence.shape == pseudo.labels.shape
+    assert ((pseudo.confidence >= 0.0) & (pseudo.confidence <= 1.0)).all()
+
+
+def test_the_permutation_carries_the_confidence_through_unchanged() -> None:
+    """The control must differ from the arm by the pairing alone, confidence included."""
+    features, ids, truth = _two_blobs()
+    train_ids, train_labels, _, unlabelled_ids = _fold(ids, truth)
+
+    pseudo = fit_pseudo_labels(features, ids, unlabelled_ids, train_ids, train_labels, seed=0)
+    shuffled = permute(pseudo, seed=1)
+
+    np.testing.assert_array_equal(shuffled.confidence, pseudo.confidence)
