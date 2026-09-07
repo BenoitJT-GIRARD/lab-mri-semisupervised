@@ -18,6 +18,8 @@ venv/
 env/
 .env
 .env.*
+# The template carries no value, only the names: it is documentation.
+!.env.example
 .python-version
 uv.lock.bak
 
