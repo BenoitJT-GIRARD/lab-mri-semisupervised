@@ -237,7 +237,10 @@ def run_experiment(
     folds_frame = pd.DataFrame(folds_meta)
 
     run_id = f"{mode}-{time.strftime('%Y%m%d-%H%M%S')}"
-    directory = Path(output_root) / run_id
+    # One canonical directory per mode rather than one per run: the repository publishes a
+    # current result, not an archive of attempts. The run id and the timestamp live in the
+    # manifest, so a published figure is still traceable to the run that produced it.
+    directory = Path(output_root) / mode
     directory.mkdir(parents=True, exist_ok=True)
     per_fold.to_parquet(directory / "per_fold.parquet", index=False)
     all_predictions.to_parquet(directory / "predictions.parquet", index=False)

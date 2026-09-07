@@ -163,9 +163,9 @@ for the features: the backbone was trained under ImageNet normalisation, and fee
 something else would trade a small visual gain for a distribution shift.
 """),
         code("""
-from mri_semisupervised.viz.plots import plot_equalization_demo
+from mri_semisupervised.viz.plots import plot_equalization
 
-plot_equalization_demo(sample["path"].iloc[0])
+plot_equalization(sample["path"].iloc[0])
 """),
         md("""
 ## 4. Clustering the embeddings
@@ -293,8 +293,7 @@ import json
 
 from mri_semisupervised.config import EXPERIMENTS_DIR
 
-runs = sorted(p for p in EXPERIMENTS_DIR.iterdir() if p.is_dir())
-corrected = [p for p in runs if p.name.startswith("corrected")][-1]
+corrected = EXPERIMENTS_DIR / "corrected"
 print(f"reading {corrected.name}")
 
 meta = json.loads((corrected / "manifest.json").read_text(encoding="utf-8"))
@@ -380,9 +379,9 @@ method and alignment decided once over every label, checkpoint taken on training
 It exists so the difference is **measured** rather than quoted from an old file.
 """),
         code("""
-legacy_runs = [p for p in runs if p.name.startswith("legacy")]
-if legacy_runs:
-    legacy = pd.read_parquet(legacy_runs[-1] / "per_fold.parquet")
+legacy_dir = EXPERIMENTS_DIR / "legacy"
+if (legacy_dir / "per_fold.parquet").exists():
+    legacy = pd.read_parquet(legacy_dir / "per_fold.parquet")
     comparison = pd.concat(
         [
             per_fold.groupby("arm")[headline].mean().add_suffix("_corrected"),
