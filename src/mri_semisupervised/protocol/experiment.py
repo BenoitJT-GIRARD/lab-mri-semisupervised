@@ -6,10 +6,14 @@ quoted from an old JSON file:
 * ``corrected`` — the protocol this package now defends. Duplicates removed by content,
   pseudo-labels fitted inside each training fold, three arms, checkpoint and threshold
   chosen on an inner validation split.
-* ``legacy`` — the original protocol, reproduced faithfully: duplicates left in place, the
-  clustering method and the cluster-to-class alignment decided once over all the labels,
-  and the checkpoint taken on training accuracy. It is not kept for use. It is kept so the
-  three leaks can be priced.
+* ``legacy`` — **the three leaks, and only those**: duplicates left in place, the
+  clustering method and the cluster-to-class alignment decided once over every label
+  including the test folds. Everything else — the inner validation split, the checkpoint,
+  the chosen threshold — stays as the corrected protocol does it.
+
+  That is deliberate, and it is narrower than "reproduce the original". It isolates what
+  the *leaks* were worth from what the *training changes* were worth. Running the original
+  end to end would confound the two, and the question here is the leaks.
 
 Every run writes a manifest naming its data, its seeds, its versions and its git revision.
 A number that cannot be traced back to one of those does not belong in the README.
