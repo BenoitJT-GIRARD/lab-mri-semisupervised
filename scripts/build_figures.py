@@ -148,10 +148,21 @@ def figure_leak_price(corrected: pd.DataFrame, legacy: pd.DataFrame, path: Path)
         legacy_means = [legacy.loc[legacy["arm"] == a, metric].mean() for a in arms]
         corrected_means = [corrected.loc[corrected["arm"] == a, metric].mean() for a in arms]
         positions = range(len(arms))
-        axis.bar([p - width / 2 for p in positions], legacy_means, width,
-                 label="with the three leaks", color="#c0392b", alpha=0.8)
-        axis.bar([p + width / 2 for p in positions], corrected_means, width,
-                 label="leaks closed", color="#4c78a8")
+        axis.bar(
+            [p - width / 2 for p in positions],
+            legacy_means,
+            width,
+            label="with the three leaks",
+            color="#c0392b",
+            alpha=0.8,
+        )
+        axis.bar(
+            [p + width / 2 for p in positions],
+            corrected_means,
+            width,
+            label="leaks closed",
+            color="#4c78a8",
+        )
         axis.set_xticks(list(positions))
         axis.set_xticklabels([ARM_LABEL[a] for a in arms], rotation=20, ha="right")
         axis.set_title(metric)
