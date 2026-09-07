@@ -1,5 +1,5 @@
 {
-  "run_id": "corrected-20260903-123125",
+  "run_id": "corrected-20260903-202001",
   "mode": "corrected",
   "dataset_fingerprint": "8f22a69ffa46ca1f",
   "evaluation_images": 99,
@@ -12,6 +12,7 @@
     "arms": [
       "supervised",
       "semi_supervised",
+      "semi_supervised_confident",
       "permuted_control"
     ]
   },
@@ -26,9 +27,10 @@
     "finetune_lr_factor": "0.5",
     "weight_decay": "0.0001",
     "inner_val_fraction": "0.25",
-    "early_stopping_patience": "5"
+    "early_stopping_patience": "5",
+    "confidence_quantiles": "(0.0, 0.25, 0.5, 0.75)"
   },
-  "git_revision": "630833a0cc100cfa6c44282c971766fdc8ffee2e",
+  "git_revision": "059bebec404e6010533c3820676873e8651be32d",
   "versions": {
     "python": "3.12.12",
     "torch": "2.11.0+cu126",
@@ -38,5 +40,5 @@
     "cuda": "12.6",
     "gpu": "NVIDIA GeForce RTX 4060 Ti"
   },
-  "duration_seconds": 1686.7
+  "duration_seconds": 4431.4
 }
