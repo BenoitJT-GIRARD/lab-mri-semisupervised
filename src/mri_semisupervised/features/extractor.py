@@ -10,6 +10,7 @@ can be done once, outside the protocol, without leaking anything.
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -49,6 +50,53 @@ def build_backbone(name: str = "resnet50", pretrained: bool = True) -> tuple[nn.
     return net, feature_dim
 
 
+INDEX_COLUMNS = ["image_id", "path", "split", "label_name", "label_index"]
+
+
+class CacheMismatchError(RuntimeError):
+    """The cached features do not describe the images being asked for.
+
+    This is the same class of fault the repository documents one layer up: an identifier
+    that did not identify. A cache computed on one dataset and read back on another pairs
+    vectors with labels that are not theirs, and nothing downstream notices — the shapes
+    agree, and so do the identifiers if the files have moved.
+    """
+
+
+def _check_cache(cached: pd.DataFrame, records: list[ImageRecord], backbone: str) -> None:
+    """Refuse a cache that disagrees with the records, and say how it disagrees.
+
+    The comparison is on the identifiers rather than on an aggregate fingerprint. The
+    identifiers are already in the parquet — they are the content hashes — and a digest
+    would only say *that* something differs. The point of a guard is to name what.
+    """
+    if "backbone" not in cached.columns:
+        raise CacheMismatchError(
+            "the cache carries no backbone column, so it predates this guard and cannot "
+            "be trusted. Delete it to recompute."
+        )
+    stored = sorted(set(cached["backbone"].unique()))
+    if stored != [backbone]:
+        raise CacheMismatchError(
+            f"the cache was built with backbone {stored}, and {backbone!r} is being asked "
+            "for. Same shape, different contents. Delete it to recompute."
+        )
+
+    # Multisets, not sets. The dataset genuinely holds duplicate content — 31 evaluation
+    # images also live in the unlabelled pool — so the same identifier legitimately
+    # appears on several rows, and a set comparison would call a lost copy a match.
+    want = Counter(r.image_id for r in records)
+    have = Counter(cached["image_id"])
+    missing = sorted((want - have).elements())
+    unexpected = sorted((have - want).elements())
+    if missing or unexpected:
+        raise CacheMismatchError(
+            f"{len(missing)} missing, {len(unexpected)} unexpected. "
+            f"missing: {missing[:3]}; unexpected: {unexpected[:3]}. "
+            "Delete the cache to recompute."
+        )
+
+
 @torch.inference_mode()
 def extract_features(
     records: list[ImageRecord],
@@ -72,10 +120,18 @@ def extract_features(
 
     if use_cache and cache_path.exists():
         cached = pd.read_parquet(cache_path)
+        _check_cache(cached, records, cfg.backbone)
+        # Row alignment is with the caller's list, not with the order the file happens to
+        # hold: every consumer indexes the matrix by the position of its record. Rows that
+        # share an identifier share their pixels, so which of them a record receives does
+        # not matter — reindexing on the identifier would multiply them instead.
+        buckets: dict[str, list[int]] = {}
+        for position, image_id in enumerate(cached["image_id"]):
+            buckets.setdefault(image_id, []).append(position)
+        cached = cached.iloc[[buckets[r.image_id].pop() for r in records]].reset_index(drop=True)
         feature_cols = [c for c in cached.columns if c.startswith("f_")]
         features = cached[feature_cols].to_numpy(dtype=np.float32)
-        index_df = cached[["image_id", "path", "split", "label_name", "label_index"]].copy()
-        return features, index_df
+        return features, cached[INDEX_COLUMNS].copy()
 
     paths = [str(r.path) for r in records]
     transform = build_eval_transform()
@@ -113,7 +169,8 @@ def extract_features(
 
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     feature_cols = [f"f_{i:04d}" for i in range(feature_dim)]
-    df_cache = pd.concat([index_df, pd.DataFrame(feats, columns=feature_cols)], axis=1)
+    stamp = pd.DataFrame({"backbone": [cfg.backbone] * len(records)})
+    df_cache = pd.concat([index_df, stamp, pd.DataFrame(feats, columns=feature_cols)], axis=1)
     df_cache.to_parquet(cache_path, index=False)
 
     return feats, index_df
@@ -124,8 +181,13 @@ def load_cached_features(cache_path: Path) -> tuple[np.ndarray, pd.DataFrame]:
     cached = pd.read_parquet(cache_path)
     feature_cols = [c for c in cached.columns if c.startswith("f_")]
     features = cached[feature_cols].to_numpy(dtype=np.float32)
-    index_df = cached[["image_id", "path", "split", "label_name", "label_index"]].copy()
+    index_df = cached[INDEX_COLUMNS].copy()
     return features, index_df
 
 
-__all__ = ["build_backbone", "extract_features", "load_cached_features"]
+__all__ = [
+    "CacheMismatchError",
+    "build_backbone",
+    "extract_features",
+    "load_cached_features",
+]

@@ -46,16 +46,6 @@ class ImageRecord:
     file_size_bytes: int
 
 
-def _safe_hash(path: Path) -> str:
-    """Identify an image by its content.
-
-    This used to hash the path, which meant two copies of one scan in two folders received
-    two identifiers — and the guard that kept the labelled images out of the unlabelled
-    pool never fired. See :mod:`mri_semisupervised.data.manifest`.
-    """
-    return content_id(path)
-
-
 def _iter_image_paths(directory: Path) -> Iterable[Path]:
     if not directory.exists():
         return iter(())
@@ -104,7 +94,7 @@ def discover_images(
                 w, h, mode = meta
                 records.append(
                     ImageRecord(
-                        image_id=_safe_hash(path),
+                        image_id=content_id(path),
                         path=path,
                         split="labeled",
                         label_name=class_name,
@@ -126,7 +116,7 @@ def discover_images(
             w, h, mode = meta
             records.append(
                 ImageRecord(
-                    image_id=_safe_hash(path),
+                    image_id=content_id(path),
                     path=path,
                     split="unlabeled",
                     label_name=None,
