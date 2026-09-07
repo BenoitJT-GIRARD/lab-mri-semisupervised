@@ -22,20 +22,30 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from mri_semisupervised.config import EXPERIMENTS_DIR, FIGURES_DIR, ensure_dirs
+from mri_semisupervised.config import (
+    EXPERIMENTS_DIR,
+    FIGURES_DIR,
+    MANIFEST_PATH,
+    ensure_dirs,
+)
+from mri_semisupervised.protocol.calibration import summarise_calibration
+from mri_semisupervised.protocol.errors import per_image_errors, pool_overlap_rates
 from mri_semisupervised.protocol.uncertainty import paired_difference
 from mri_semisupervised.viz.plots import plot_roc_compare
 
 ARM_LABEL = {
     "supervised": "supervised",
     "semi_supervised": "semi-supervised",
+    "semi_supervised_confident": "semi-supervised, filtered",
     "permuted_control": "permuted control",
 }
 ARM_COLOUR = {
     "supervised": "#4c78a8",
     "semi_supervised": "#f58518",
+    "semi_supervised_confident": "#e45756",
     "permuted_control": "#9c9c9c",
 }
+BUDGETS = (10, 20, 40)
 
 
 def _load(mode: str) -> tuple[pd.DataFrame, pd.DataFrame, dict] | None:
@@ -176,6 +186,161 @@ def figure_leak_price(corrected: pd.DataFrame, legacy: pd.DataFrame, path: Path)
     print(f"[ok] {path.name}")
 
 
+def figure_calibration(predictions: pd.DataFrame, path: Path) -> None:
+    """Reliability curves: what a score of 0.4 is actually worth.
+
+    ROC AUC cannot see this. A model whose ranking is perfect and whose scale is squashed
+    scores 1.0 and still tells a clinician the wrong number.
+    """
+    summary, curves = summarise_calibration(predictions, n_bins=10)
+    figure, axis = plt.subplots(figsize=(6.5, 6))
+    axis.plot([0, 1], [0, 1], color="#bbbbbb", linestyle="--", linewidth=1, label="perfect")
+
+    for arm, curve in curves.items():
+        row = summary[summary["arm"] == arm].iloc[0]
+        axis.plot(
+            curve["mean_score"],
+            curve["observed"],
+            marker="o",
+            markersize=4,
+            color=ARM_COLOUR.get(arm, "#333333"),
+            label=f"{ARM_LABEL.get(arm, arm)} — Brier {row['brier']:.3f}, ECE {row['ece']:.3f}",
+        )
+
+    axis.set_xlabel("mean predicted probability (equal-population bins)")
+    axis.set_ylabel("observed cancer rate")
+    axis.set_title("Calibration, pooled out of fold")
+    axis.set_xlim(0, 1)
+    axis.set_ylim(0, 1)
+    axis.legend(fontsize=8, loc="upper left")
+    figure.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(figure)
+    print(f"[ok] {path.name}")
+
+
+def figure_label_efficiency(path: Path) -> pd.DataFrame | None:
+    """Two panels; the second is the one that answers the question.
+
+    The top panel shows the task getting easier as labels are added, which is expected and
+    says nothing about semi-supervision. Only the paired difference against the permuted
+    control does, and it gets its own axis so it cannot be read off the first by eye.
+    """
+    points = []
+    for budget in BUDGETS:
+        loaded = _load(f"budget-{budget}")
+        if loaded is None:
+            continue
+        points.append((budget, loaded[0]))
+    full = _load("corrected")
+    if full is not None:
+        points.append((int(full[2]["protocol"].get("label_budget") or 59), full[0]))
+    if len(points) < 2:
+        print("[warn] not enough budgets to draw the curve")
+        return None
+
+    rows = []
+    for budget, per_fold in sorted(points):
+        pivot = per_fold.pivot(index="fold", columns="arm", values="roc_auc")
+        for arm in pivot.columns:
+            rows.append(
+                {
+                    "budget": budget,
+                    "arm": arm,
+                    "mean": float(pivot[arm].mean()),
+                    "sd": float(pivot[arm].std()),
+                }
+            )
+        if {"semi_supervised", "permuted_control"} <= set(pivot.columns):
+            out = paired_difference(
+                pivot["semi_supervised"].to_numpy(), pivot["permuted_control"].to_numpy()
+            )
+            rows.append(
+                {
+                    "budget": budget,
+                    "arm": "difference",
+                    "mean": out["mean_difference"],
+                    "ci_low": out["ci_low"],
+                    "ci_high": out["ci_high"],
+                    "p_value": out["p_value"],
+                }
+            )
+    frame = pd.DataFrame(rows)
+
+    figure, (top, bottom) = plt.subplots(
+        2, 1, figsize=(7, 7.5), sharex=True, gridspec_kw={"height_ratios": [2, 1]}
+    )
+    for arm in ("supervised", "semi_supervised", "permuted_control"):
+        part = frame[frame["arm"] == arm].sort_values("budget")
+        if part.empty:
+            continue
+        top.errorbar(
+            part["budget"],
+            part["mean"],
+            yerr=part["sd"],
+            marker="o",
+            capsize=3,
+            color=ARM_COLOUR.get(arm, "#333333"),
+            label=ARM_LABEL.get(arm, arm),
+        )
+    top.set_ylabel("ROC AUC")
+    top.set_title("Label efficiency: the task, and then the question")
+    top.legend(fontsize=9)
+
+    diff = frame[frame["arm"] == "difference"].sort_values("budget")
+    bottom.axhline(0.0, color="#bbbbbb", linestyle="--", linewidth=1)
+    bottom.errorbar(
+        diff["budget"],
+        diff["mean"],
+        yerr=[diff["mean"] - diff["ci_low"], diff["ci_high"] - diff["mean"]],
+        marker="o",
+        capsize=3,
+        color="#f58518",
+    )
+    bottom.set_xlabel("training labels per fold")
+    bottom.set_ylabel("semi-supervised minus control")
+    figure.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(figure)
+    print(f"[ok] {path.name}")
+    return frame
+
+
+def figure_hardest_images(errors: pd.DataFrame, manifest: pd.DataFrame, path: Path) -> None:
+    """The twelve images the supervised arm misses most, with what it said about them.
+
+    An aggregate rate says a model is wrong 7% of the time. It does not say the misses are
+    the same handful of scans every fold, which on ninety-nine images is checkable by eye.
+    """
+    from PIL import Image
+
+    worst = (
+        errors[errors["arm"] == "supervised"]
+        .sort_values(["wrong_share", "n_wrong"], ascending=False)
+        .head(12)
+    )
+    paths = dict(zip(manifest["image_id"], manifest["path"], strict=True))
+
+    figure, axes = plt.subplots(3, 4, figsize=(11, 9))
+    for axis, row in zip(axes.ravel(), worst.itertuples(), strict=False):
+        source = paths.get(row.image_id)
+        if source and Path(source).exists():
+            with Image.open(source) as image:
+                axis.imshow(image.convert("L"), cmap="gray")
+        truth = "cancer" if row.y_true == 1 else "normal"
+        pool = ", also in pool" if row.also_in_pool else ""
+        axis.set_title(
+            f"{truth}, score {row.mean_score:.2f}\nmissed {row.n_wrong}/{row.n_folds}{pool}",
+            fontsize=8,
+        )
+        axis.axis("off")
+    for axis in axes.ravel()[len(worst) :]:
+        axis.axis("off")
+
+    figure.suptitle("What the supervised arm gets wrong, and how confidently", fontsize=11)
+    figure.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(figure)
+    print(f"[ok] {path.name}")
+
+
 def main() -> None:
     ensure_dirs()
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
@@ -191,9 +356,27 @@ def main() -> None:
     figure_arms(per_fold, FIGURES_DIR / "arms_comparison.png")
     figure_paired(per_fold, FIGURES_DIR / "paired_differences.png")
 
+    figure_calibration(predictions, FIGURES_DIR / "calibration.png")
+
     legacy_loaded = _load("legacy")
     if legacy_loaded is not None:
         figure_leak_price(per_fold, legacy_loaded[0], FIGURES_DIR / "leak_price.png")
+
+    manifest_path = Path(MANIFEST_PATH)
+    if manifest_path.exists():
+        manifest = pd.read_parquet(manifest_path)
+        errors = per_image_errors(predictions, per_fold, manifest)
+        target = EXPERIMENTS_DIR / "corrected" / "per_image_errors.parquet"
+        errors.to_parquet(target, index=False)
+        print(f"[ok] {target.name}")
+        print(pool_overlap_rates(errors).round(3).to_string(index=False))
+        figure_hardest_images(errors, manifest, FIGURES_DIR / "hardest_images.png")
+
+    curve = figure_label_efficiency(FIGURES_DIR / "label_efficiency.png")
+    if curve is not None:
+        target = EXPERIMENTS_DIR / "label_efficiency.parquet"
+        curve.to_parquet(target, index=False)
+        print(f"[ok] {target.name}")
 
 
 if __name__ == "__main__":
