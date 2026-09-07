@@ -1,6 +1,6 @@
-# Pre-commit config — exécute lint, format et hygiène avant chaque commit.
-# Installation : `uv run pre-commit install` (les hooks s'enregistrent dans .git/hooks).
-# Exécution manuelle : `uv run pre-commit run --all-files`.
+# Pre-commit config — runs lint, format and hygiene checks before every commit.
+# Install with: `uv run pre-commit install` (the hooks register in .git/hooks).
+# Run by hand with: `uv run pre-commit run --all-files`.
 
 minimum_pre_commit_version: "3.5.0"
 
