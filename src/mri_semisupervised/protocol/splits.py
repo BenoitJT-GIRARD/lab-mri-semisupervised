@@ -99,4 +99,49 @@ def inner_split(
     return np.sort(inner_train), np.sort(inner_val)
 
 
-__all__ = ["FoldSpec", "derive_seed", "inner_split", "outer_folds"]
+def nested_subsample(
+    labels: np.ndarray, train_idx: np.ndarray, budget: int, seed: int
+) -> np.ndarray:
+    """Draw ``budget`` training indices, stratified, and nested across budgets.
+
+    Nesting is the point: the draw at 10 is contained in the draw at 20, which is contained
+    in the draw at 40. Each class is ranked once under a seeded permutation and every budget
+    takes a prefix of that ranking, so nesting is a consequence of the construction rather
+    than a property to maintain.
+
+    Without it, a curve that dips at one budget could always be explained by a luckier draw
+    at its neighbours, and the whole figure would be unreadable.
+    """
+    train_idx = np.asarray(train_idx)
+    labels = np.asarray(labels)
+    if budget >= len(train_idx):
+        return np.sort(train_idx)
+
+    classes = np.unique(labels[train_idx])
+    if len(classes) < 2:
+        raise ValueError("the training fold holds a single class")
+
+    rng = np.random.default_rng(seed)
+    drawn: list[np.ndarray] = []
+    for klass in classes:
+        members = train_idx[labels[train_idx] == klass]
+        ranked = rng.permutation(members)
+        share = len(members) / len(train_idx)
+        take = round(budget * share)
+        if take < 1:
+            raise ValueError(
+                f"budget {budget} leaves no room for class {klass}; "
+                "below that the cluster alignment degenerates and the curve would "
+                "measure the degeneracy"
+            )
+        drawn.append(ranked[:take])
+    return np.sort(np.concatenate(drawn))
+
+
+__all__ = [
+    "FoldSpec",
+    "derive_seed",
+    "inner_split",
+    "nested_subsample",
+    "outer_folds",
+]

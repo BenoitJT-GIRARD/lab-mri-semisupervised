@@ -48,7 +48,12 @@ from mri_semisupervised.protocol.pseudo_labels import (
     composition,
     fit_pseudo_labels,
 )
-from mri_semisupervised.protocol.splits import derive_seed, inner_split, outer_folds
+from mri_semisupervised.protocol.splits import (
+    derive_seed,
+    inner_split,
+    nested_subsample,
+    outer_folds,
+)
 
 CORRECTED = "corrected"
 LEGACY = "legacy"
@@ -187,8 +192,31 @@ def run_experiment(
     specs = list(outer_folds(eval_labels, protocol.n_splits, protocol.n_repeats, protocol.seed))
 
     for index, spec in enumerate(specs, start=1):
-        train_ids, train_labels = eval_ids[spec.train_idx], eval_labels[spec.train_idx]
         test_ids, test_labels = eval_ids[spec.test_idx], eval_labels[spec.test_idx]
+
+        inner_train_idx, inner_val_idx = inner_split(
+            eval_labels, spec.train_idx, training.inner_val_fraction, spec.seed
+        )
+        # The budget caps the training half only. The inner validation keeps its full size
+        # at every budget: shrinking it too would make the checkpoint and the threshold
+        # incomparable from one point of the curve to the next, and nobody could tell
+        # whether the curve described learning or a decaying stopping rule. The budget
+        # therefore counts *training* labels, and the README has to say so.
+        if protocol.label_budget is not None:
+            inner_train_idx = nested_subsample(
+                eval_labels,
+                inner_train_idx,
+                protocol.label_budget,
+                derive_seed(spec.seed, "budget", protocol.label_budget),
+            )
+
+        # What the fold is allowed to read: the labels that exist under this budget. With
+        # no budget this is exactly ``spec.train_idx``, so the published run is unchanged.
+        # It has to be capped here too — a clustering aligned on more labels than the arms
+        # fine-tune on would give the semi-supervised arm information its own baseline does
+        # not have, and the curve would measure that gap instead of the budget.
+        readable_idx = np.sort(np.concatenate([inner_train_idx, inner_val_idx]))
+        train_ids, train_labels = eval_ids[readable_idx], eval_labels[readable_idx]
 
         if mode in CORRECTED_MODES:
             pseudo = fit_pseudo_labels(
@@ -196,10 +224,6 @@ def run_experiment(
             )
         else:
             pseudo = global_pseudo
-
-        inner_train_idx, inner_val_idx = inner_split(
-            eval_labels, spec.train_idx, training.inner_val_fraction, spec.seed
-        )
         inner_train = list(
             zip(eval_ids[inner_train_idx], eval_labels[inner_train_idx], strict=True)
         )
@@ -212,6 +236,8 @@ def run_experiment(
                 "repeat": spec.repeat,
                 "split": spec.fold,
                 "n_train": len(spec.train_idx),
+                "n_labels_used": len(inner_train_idx),
+                "label_budget": protocol.label_budget,
                 "n_test": len(spec.test_idx),
                 "n_inner_val": len(inner_val_idx),
                 "pseudo_method": pseudo.method_name if pseudo else None,
@@ -290,7 +316,9 @@ def run_experiment(
     # One canonical directory per mode rather than one per run: the repository publishes a
     # current result, not an archive of attempts. The run id and the timestamp live in the
     # manifest, so a published figure is still traceable to the run that produced it.
-    directory = Path(output_root) / mode
+    directory = Path(output_root) / (
+        mode if protocol.label_budget is None else f"budget-{protocol.label_budget}"
+    )
     directory.mkdir(parents=True, exist_ok=True)
     per_fold.to_parquet(directory / "per_fold.parquet", index=False)
     all_predictions.to_parquet(directory / "predictions.parquet", index=False)

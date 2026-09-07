@@ -130,6 +130,11 @@ class ProtocolConfig:
     n_repeats: int = 5
     seed: int = SEED
     n_bootstrap: int = 2000
+    #: Cap on the number of training labels each fold may use, or ``None`` for all of them.
+    #: It caps the fine-tuning **and** what the clustering may read: otherwise the
+    #: semi-supervised arm would carry more label information than its own baseline, and
+    #: the curve would measure that imbalance instead of the budget.
+    label_budget: int | None = None
     # Must match ``protocol.arms.ARMS`` exactly. It is spelled out rather than
     # imported because ``arms`` imports this module, and a test asserts the two agree —
     # adding an arm here and forgetting this line ran a three-arm experiment while the
