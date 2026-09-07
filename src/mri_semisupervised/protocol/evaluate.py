@@ -51,6 +51,38 @@ def choose_threshold(y_true: np.ndarray, y_score: np.ndarray) -> float:
     return best_threshold
 
 
+SENSITIVITY_TARGET = 0.90
+
+
+def threshold_at_sensitivity(
+    y_true: np.ndarray, y_score: np.ndarray, target: float = SENSITIVITY_TARGET
+) -> float:
+    """The highest threshold that still catches ``target`` of the positives.
+
+    ``choose_threshold`` maximises F1 on the positive class and breaks ties towards the
+    false positive. That is defensible in general and it contradicts the frame this
+    repository claims: on a screening problem the two errors do not cost the same, and F1
+    treats them as if they did. Both the external review and the jury noted that
+    ``recall_positive`` was computed and never governed a decision.
+
+    So this is published beside the F1 threshold, not instead of it. The first serves the
+    comparison between arms, where symmetry is what you want; the second serves the medical
+    frame. Reading them together shows what the frame costs.
+
+    Returns ``nan`` when the target cannot be met — on sixteen validation images that
+    happens, and an honest nan beats a silent fallback to 0.5.
+    """
+    y_true, y_score = np.asarray(y_true), np.asarray(y_score)
+    positives = np.sort(y_score[y_true == 1])[::-1]
+    if len(positives) == 0:
+        return float("nan")
+
+    needed = int(np.ceil(target * len(positives)))
+    if needed <= 0 or needed > len(positives):
+        return float("nan")
+    return float(positives[needed - 1])
+
+
 def threshold_free(y_true: np.ndarray, y_score: np.ndarray) -> dict[str, float]:
     """The metrics that do not depend on where the line is drawn."""
     y_true, y_score = np.asarray(y_true), np.asarray(y_score)
@@ -101,13 +133,32 @@ def evaluate_fold(
     result.update(metrics_at(y_true, y_score, threshold))
     default = metrics_at(y_true, y_score, DEFAULT_THRESHOLD)
     result.update({f"default_{k}": v for k, v in default.items() if k != "threshold"})
+
+    # The sensitivity-first operating point, chosen on the validation split like every
+    # other decision here, and reported on the test fold.
+    sensitivity = threshold_at_sensitivity(val_y_true, val_y_score)
+    if np.isnan(sensitivity):
+        at_sensitivity = dict.fromkeys(
+            ("recall_positive", "precision_positive", "f1_positive"), float("nan")
+        )
+    else:
+        at_sensitivity = metrics_at(y_true, y_score, sensitivity)
+    result["sensitivity_threshold"] = sensitivity
+    result.update(
+        {
+            f"sensitivity_{k}": at_sensitivity[k]
+            for k in ("recall_positive", "precision_positive", "f1_positive")
+        }
+    )
     return result
 
 
 __all__ = [
     "DEFAULT_THRESHOLD",
+    "SENSITIVITY_TARGET",
     "choose_threshold",
     "evaluate_fold",
     "metrics_at",
+    "threshold_at_sensitivity",
     "threshold_free",
 ]

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from mri_semisupervised.protocol.evaluate import (
+    SENSITIVITY_TARGET,
     choose_threshold,
     evaluate_fold,
     metrics_at,
+    threshold_at_sensitivity,
     threshold_free,
 )
 from mri_semisupervised.protocol.uncertainty import bootstrap_ci, paired_difference
@@ -96,3 +99,69 @@ def test_no_difference_gives_a_p_value_of_one() -> None:
     out = paired_difference(a, a, n_boot=200, seed=0)
     assert out["mean_difference"] == 0.0
     assert out["p_value"] == 1.0
+
+
+# --- Point de fonctionnement a sensibilite imposee (R4) -------------------
+
+
+def test_the_sensitivity_threshold_is_the_highest_one_that_holds_the_target() -> None:
+    y = np.array([0, 0, 1, 1, 1])
+    s = np.array([0.10, 0.55, 0.40, 0.80, 0.90])
+
+    threshold = threshold_at_sensitivity(y, s, target=0.90)
+
+    assert threshold == pytest.approx(0.40)
+    assert (s >= threshold)[y == 1].mean() >= 0.90
+
+
+def test_a_higher_threshold_would_break_the_target() -> None:
+    """Highest, not merely sufficient: a lower one costs precision for nothing."""
+    y = np.array([0, 0, 1, 1, 1])
+    s = np.array([0.10, 0.55, 0.40, 0.80, 0.90])
+
+    threshold = threshold_at_sensitivity(y, s, target=0.90)
+    higher = np.min(s[s > threshold])
+
+    assert (s >= higher)[y == 1].mean() < 0.90
+
+
+def test_an_unreachable_target_returns_nan_rather_than_a_default() -> None:
+    """Sixteen validation images cannot always hold 0.90. A nan says so; 0.5 would lie."""
+    assert np.isnan(threshold_at_sensitivity(np.array([0, 1]), np.array([0.9, 0.1]), target=1.01))
+
+
+def test_no_positive_at_all_gives_nan() -> None:
+    assert np.isnan(threshold_at_sensitivity(np.array([0, 0]), np.array([0.2, 0.8])))
+
+
+def test_the_fold_report_carries_both_operating_points() -> None:
+    y = np.array([0, 0, 1, 1])
+    s = np.array([0.10, 0.20, 0.30, 0.90])
+
+    out = evaluate_fold(y, s, val_y_true=y, val_y_score=s)
+
+    assert out["threshold"] < 0.5
+    assert out["sensitivity_threshold"] == pytest.approx(0.30)
+    assert out["sensitivity_recall_positive"] >= SENSITIVITY_TARGET
+    assert "sensitivity_precision_positive" in out
+
+
+def test_the_sensitivity_point_is_chosen_on_validation_not_on_the_fold() -> None:
+    """Same rule as every other decision here: the test fold is read once, at the end."""
+    y = np.array([0, 0, 1, 1])
+    test_scores = np.array([0.10, 0.20, 0.30, 0.90])
+    val_scores = np.array([0.60, 0.65, 0.70, 0.95])
+
+    out = evaluate_fold(y, test_scores, val_y_true=y, val_y_score=val_scores)
+
+    assert out["sensitivity_threshold"] == pytest.approx(0.70)
+
+
+def test_an_unreachable_target_leaves_the_row_nan_without_failing() -> None:
+    y = np.array([0, 0, 1, 1])
+    s = np.array([0.10, 0.20, 0.30, 0.90])
+
+    out = evaluate_fold(y, s, val_y_true=np.array([0, 0, 0, 0]), val_y_score=s)
+
+    assert np.isnan(out["sensitivity_threshold"])
+    assert np.isnan(out["sensitivity_recall_positive"])
