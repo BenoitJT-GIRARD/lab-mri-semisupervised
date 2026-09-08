@@ -272,12 +272,13 @@ conclusion — it is there to report one.
 * Duplicates are removed **by content**, and the evaluation set never loses an image.
 * The clustering, the choice of method and the alignment happen **inside the training
   fold**. The test fold takes part in no decision.
-* Three arms share folds, architecture and starting weights:
+* Four arms share folds, architecture and starting weights:
 
 | arm | pre-training | what it isolates |
 |---|---|---|
 | `supervised` | none | the reference |
 | `semi_supervised` | the fold's pseudo-labels | the supposed contribution |
+| `semi_supervised_confident` | only the pseudo-labels above a confidence cut | whether noise was the problem |
 | `permuted_control` | the same images, labels shuffled | budget and exposure |
 
 * The checkpoint and the decision threshold come from an inner validation split carved out
@@ -285,8 +286,9 @@ conclusion — it is there to report one.
 * Five repeats of a five-fold cross-validation, so the spread is measured rather than
   guessed.
 
-The third arm is the one that can end the discussion. It sees the same images and takes the
-same steps; only the pairing between image and pseudo-label is destroyed.
+The control is the arm that can end the discussion. It sees the same images and takes the
+same number of steps; only the pairing between an image and its pseudo-label is destroyed.
+Every pre-training arm here has one.
 """),
         code("""
 import json
@@ -308,7 +310,7 @@ predictions = pd.read_parquet(corrected / "predictions.parquet")
 folds = pd.read_parquet(corrected / "folds.parquet")
 """),
         md("""
-## 2. The three arms, side by side
+## 2. The arms, side by side
 
 Two families of number, and they answer different questions. **ROC AUC and PR-AUC** say how
 well the scores rank, whatever threshold is applied. **Recall and F1** say what happens at
@@ -336,6 +338,7 @@ for metric in ["roc_auc", "pr_auc", "recall_positive"]:
     for a, b in [
         ("semi_supervised", "supervised"),
         ("semi_supervised", "permuted_control"),
+        ("semi_supervised_confident", "permuted_control"),
         ("permuted_control", "supervised"),
     ]:
         out = paired_difference(pivot[(metric, a)].to_numpy(), pivot[(metric, b)].to_numpy())
@@ -347,6 +350,102 @@ The line to read first is `semi_supervised - permuted_control`. If its interval 
 then pre-training on pseudo-labels does no better than pre-training on the same images with
 those labels shuffled — and whatever the first version measured was budget and exposure, not
 the information the clustering had found.
+"""),
+        md("""
+## 3bis. Where the experiment could see anything at all
+
+A null result is only worth reading if the experiment could have shown a gain. The
+supervised baseline reaches 0.966 with eight folds out of twenty-five already at 1.000, so
+what is left to win is about the size of the noise. The arms were therefore rerun at
+smaller labelling budgets, where a semi-supervised method has room to help.
+"""),
+        code("""
+budgets = {}
+for name, size in [("budget-10", 10), ("budget-20", 20), ("budget-40", 40), ("corrected", 59)]:
+    path = EXPERIMENTS_DIR / name / "per_fold.parquet"
+    if path.exists():
+        budgets[size] = pd.read_parquet(path).pivot(index="fold", columns="arm", values="roc_auc")
+
+rows = []
+for size, pivot in sorted(budgets.items()):
+    row = {"labels": size}
+    row.update({arm: round(pivot[arm].mean(), 3) for arm in pivot.columns})
+    if {"semi_supervised", "permuted_control"} <= set(pivot.columns):
+        out = paired_difference(
+            pivot["semi_supervised"].to_numpy(), pivot["permuted_control"].to_numpy()
+        )
+        row["semi - control"] = f"{out['mean_difference']:+.3f} (p={out['p_value']:.2f})"
+    rows.append(row)
+pd.DataFrame(rows)
+"""),
+        md("""
+Two things this table says that a single budget could not. The semi-supervised arm never
+beats the plain baseline, at any budget. And the permuted control sits *below* that baseline
+everywhere — so the pre-training phase costs something on its own, and real pseudo-labels
+recover part of that cost without ever turning it into a gain.
+"""),
+        md("""
+## 3ter. Two hypotheses about why, each with its own control
+
+Two explanations for the null result are worth testing rather than asserting. Maybe the
+pre-training is simply **forgotten** — 246 steps, then a fine-tuning that converges in two
+to four epochs. Maybe the labels come from the **wrong source** — a k-means on ImageNet
+embeddings rather than the decision function being optimised.
+
+`semi_supervised_joint` keeps the pseudo-label loss present at every step;
+`self_training` builds its labels from its own first pass. Each is read against its own
+control, never against the plain baseline.
+"""),
+        code("""
+stage_b = EXPERIMENTS_DIR / "corrected-stageb" / "per_fold.parquet"
+if stage_b.exists():
+    mech = pd.read_parquet(stage_b).pivot(index="fold", columns="arm", values="roc_auc")
+    joined = pd.concat([pivot_full := per_fold.pivot(index="fold", columns="arm",
+                                                     values="roc_auc"), mech], axis=1)
+    rows = []
+    for arm, control in [("semi_supervised_joint", "joint_permuted_control"),
+                         ("self_training", "self_training_control")]:
+        against_control = paired_difference(joined[arm].to_numpy(), joined[control].to_numpy())
+        against_baseline = paired_difference(joined[arm].to_numpy(),
+                                             joined["supervised"].to_numpy())
+        rows.append({
+            "arm": arm,
+            "vs its control": f"{against_control['mean_difference']:+.3f} "
+                              f"(p={against_control['p_value']:.3f})",
+            "vs supervised": f"{against_baseline['mean_difference']:+.3f} "
+                             f"(p={against_baseline['p_value']:.3f})",
+        })
+    display(pd.DataFrame(rows))
+"""),
+        md("""
+Joint training beats its control significantly and still loses to the baseline. Both facts
+are needed: the control sits at 0.922 because training on shuffled labels at every step is
+harmful, so the win against it measures that harm rather than a gain. A significant p-value
+against the correct control can still mean the opposite of what it looks like.
+"""),
+        md("""
+## 3quater. What a returned probability is worth
+
+The protocol publishes scores. Whether they mean anything as probabilities is a separate
+question, and ROC AUC cannot answer it: a model whose ranking is perfect and whose scale is
+squashed scores 1.0 either way.
+"""),
+        code("""
+from mri_semisupervised.protocol.calibration import summarise_calibration
+
+summary, curves = summarise_calibration(predictions, n_bins=10)
+display(summary.round(4))
+
+sup = curves["supervised"]
+display(sup[["mean_score", "observed", "gap"]].round(3))
+"""),
+        md("""
+Read the `gap` column: where the model predicts 0.44 the observed cancer rate is 0.67. The
+mid-range scores understate risk by twenty points and more, which is the direct reason an
+operating point chosen on one split does not transport to another.
+
+Nothing is recalibrated here. A network fine-tuned on twenty images per fold has little
+chance of being calibrated, and measuring that and saying so is the result.
 """),
         code("""
 from mri_semisupervised.viz.plots import plot_roc_compare
