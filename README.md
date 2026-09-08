@@ -286,6 +286,20 @@ identifiers — so grouping by patient, the first thing a medical dataset needs,
 be checked here. That is a limitation of the data, and it would be the first question to ask
 of any real deployment.
 
-## Licence
+## Licence and data
 
-MIT
+MIT, for the code.
+
+**The MRI images are not redistributed here, and this repository does not hold the right
+to redistribute them.** They are third-party medical images obtained as a fixed archive;
+their terms are not public, so anyone reproducing this supplies their own copy and points
+`MRI_DATA_DIR` at it.
+
+What *is* versioned is derived and carries no image data: fold indices, per-fold metrics,
+out-of-fold predictions as scores, and the manifests under `reports/experiments/` that
+record the dataset fingerprint, the seeds, the package versions and the git revision behind
+each run. That is enough to check every number in this README and not enough to reconstruct
+a single scan.
+
+The dataset fingerprint in each manifest is what lets someone with the same archive confirm
+they are looking at the same 1 506 images.
