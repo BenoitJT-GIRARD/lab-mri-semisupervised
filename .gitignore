@@ -94,3 +94,7 @@ infos/
 secrets.toml
 *.pem
 *.key
+
+# The only figure that embeds the scans themselves. Every other figure is a plot of
+# derived numbers and is versioned; this one would redistribute third-party medical images.
+reports/figures/hardest_images.png
