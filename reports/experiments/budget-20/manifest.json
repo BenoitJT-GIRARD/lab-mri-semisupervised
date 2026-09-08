@@ -1,0 +1,45 @@
+{
+  "run_id": "corrected-20260903-235109",
+  "mode": "corrected",
+  "dataset_fingerprint": "8f22a69ffa46ca1f",
+  "evaluation_images": 99,
+  "unlabelled_pool": 1311,
+  "protocol": {
+    "n_splits": 5,
+    "n_repeats": 5,
+    "seed": 42,
+    "n_bootstrap": 2000,
+    "label_budget": 20,
+    "arms": [
+      "supervised",
+      "semi_supervised",
+      "permuted_control"
+    ]
+  },
+  "training": {
+    "architecture": "resnet18",
+    "num_classes": "2",
+    "image_size": "224",
+    "batch_size": "16",
+    "epochs_weak": "3",
+    "epochs_strong": "20",
+    "learning_rate": "0.0001",
+    "finetune_lr_factor": "0.5",
+    "weight_decay": "0.0001",
+    "inner_val_fraction": "0.25",
+    "early_stopping_patience": "5",
+    "confidence_quantiles": "(0.0, 0.25, 0.5, 0.75)",
+    "equalize": "False"
+  },
+  "git_revision": "48d51025e8ec2bd4f91aff789b4e8b4761073341",
+  "versions": {
+    "python": "3.12.12",
+    "torch": "2.11.0+cu126",
+    "sklearn": "1.8.0",
+    "numpy": "2.4.4",
+    "pandas": "3.0.2",
+    "cuda": "12.6",
+    "gpu": "NVIDIA GeForce RTX 4060 Ti"
+  },
+  "duration_seconds": 1552.8
+}

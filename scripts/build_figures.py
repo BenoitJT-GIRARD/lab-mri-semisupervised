@@ -37,15 +37,29 @@ ARM_LABEL = {
     "supervised": "supervised",
     "semi_supervised": "semi-supervised",
     "semi_supervised_confident": "semi-supervised, filtered",
+    "semi_supervised_joint": "joint training",
+    "self_training": "self-training",
     "permuted_control": "permuted control",
 }
 ARM_COLOUR = {
     "supervised": "#4c78a8",
     "semi_supervised": "#f58518",
     "semi_supervised_confident": "#e45756",
+    "semi_supervised_joint": "#54a24b",
+    "self_training": "#b279a2",
     "permuted_control": "#9c9c9c",
 }
 BUDGETS = (10, 20, 40)
+#: Each mechanism arm and the control it must be read against. The joint arm carries a
+#: second treatment — its pseudo batches update BatchNorm on the pool — so comparing it to
+#: the plain supervised baseline would conflate that with the pseudo-label loss.
+MECHANISMS = {
+    "semi_supervised_joint": "joint_permuted_control",
+    "self_training": "self_training_control",
+}
+#: Where the mechanism arms ran: the lowest budget, where there is room to see an effect,
+#: and the full budget, which is the one the headline uses.
+MECHANISM_RUNS = (("budget-10-stageb", 10), ("corrected-stageb", 59))
 
 
 def _load(mode: str) -> tuple[pd.DataFrame, pd.DataFrame, dict] | None:
@@ -341,6 +355,67 @@ def figure_hardest_images(errors: pd.DataFrame, manifest: pd.DataFrame, path: Pa
     print(f"[ok] {path.name}")
 
 
+def figure_mechanisms(path: Path) -> pd.DataFrame | None:
+    """Each mechanism against its own control, at the budgets where it ran.
+
+    Two hypotheses about *why* the sequential pseudo-labels do nothing, each with a control
+    that isolates it. Joint training tests whether the pre-training is simply forgotten;
+    self-training tests whether the labels came from the wrong source. Neither is read
+    against the plain supervised baseline — the joint arm updates BatchNorm on the pool, so
+    that comparison would measure two treatments at once.
+    """
+    rows = []
+    for name, budget in MECHANISM_RUNS:
+        loaded = _load(name)
+        if loaded is None:
+            continue
+        pivot = loaded[0].pivot(index="fold", columns="arm", values="roc_auc")
+        for arm, control in MECHANISMS.items():
+            if not {arm, control} <= set(pivot.columns):
+                continue
+            out = paired_difference(pivot[arm].to_numpy(), pivot[control].to_numpy())
+            rows.append(
+                {
+                    "budget": budget,
+                    "arm": arm,
+                    "control": control,
+                    "arm_mean": float(pivot[arm].mean()),
+                    "control_mean": float(pivot[control].mean()),
+                    "difference": out["mean_difference"],
+                    "ci_low": out["ci_low"],
+                    "ci_high": out["ci_high"],
+                    "p_value": out["p_value"],
+                }
+            )
+    if not rows:
+        print("[warn] no mechanism run found")
+        return None
+    frame = pd.DataFrame(rows)
+
+    figure, axis = plt.subplots(figsize=(7, 4.5))
+    axis.axvline(0.0, color="#bbbbbb", linestyle="--", linewidth=1)
+    labels = []
+    for position, row in enumerate(frame.itertuples()):
+        axis.errorbar(
+            row.difference,
+            position,
+            xerr=[[row.difference - row.ci_low], [row.ci_high - row.difference]],
+            fmt="o",
+            capsize=4,
+            color=ARM_COLOUR.get(row.arm, "#333333"),
+        )
+        labels.append(f"{ARM_LABEL.get(row.arm, row.arm)} — {row.budget} labels")
+    axis.set_yticks(range(len(frame)))
+    axis.set_yticklabels(labels, fontsize=8)
+    axis.set_xlabel("ROC AUC against the arm's own control")
+    axis.set_title("Two hypotheses about why the pseudo-labels do nothing")
+    axis.invert_yaxis()
+    figure.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(figure)
+    print(f"[ok] {path.name}")
+    return frame
+
+
 def main() -> None:
     ensure_dirs()
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
@@ -377,6 +452,13 @@ def main() -> None:
         target = EXPERIMENTS_DIR / "label_efficiency.parquet"
         curve.to_parquet(target, index=False)
         print(f"[ok] {target.name}")
+
+    mechanisms = figure_mechanisms(FIGURES_DIR / "mechanisms.png")
+    if mechanisms is not None:
+        target = EXPERIMENTS_DIR / "mechanisms.parquet"
+        mechanisms.to_parquet(target, index=False)
+        print(f"[ok] {target.name}")
+        print(mechanisms.round(4).to_string(index=False))
 
 
 if __name__ == "__main__":
