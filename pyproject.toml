@@ -116,10 +116,11 @@ indent-style = "space"
 minversion = "8.0"
 addopts = "-ra --strict-markers --strict-config"
 testpaths = ["tests"]
-filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::FutureWarning",
-]
+# Warnings are errors (ADR 0028). Two blanket `ignore::` lines used to hide every
+# DeprecationWarning and FutureWarning, ours included. The suite passes with no exemption
+# at all: nothing this code or its dependencies emit needed silencing, which is the answer
+# a blanket ignore made impossible to see.
+filterwarnings = ["error"]
 
 [tool.coverage.run]
 source = ["src/mri_semisupervised"]
