@@ -13,7 +13,11 @@ from mri_semisupervised.protocol.evaluate import (
     threshold_at_sensitivity,
     threshold_free,
 )
-from mri_semisupervised.protocol.uncertainty import bootstrap_ci, paired_difference
+from mri_semisupervised.protocol.uncertainty import (
+    bootstrap_ci,
+    holm_correction,
+    paired_difference,
+)
 
 
 def test_the_threshold_falls_between_the_two_classes() -> None:
@@ -165,3 +169,34 @@ def test_an_unreachable_target_leaves_the_row_nan_without_failing() -> None:
 
     assert np.isnan(out["sensitivity_threshold"])
     assert np.isnan(out["sensitivity_recall_positive"])
+
+
+# --- Multiplicite (spec 006) ---------------------------------------------
+
+
+def test_holm_is_stricter_on_the_smallest_p_and_laxer_on_the_largest() -> None:
+    out = holm_correction({"a": 0.001, "b": 0.02, "c": 0.04}, alpha=0.05)
+    assert list(out["comparison"]) == ["a", "b", "c"]
+    assert out.loc[0, "threshold"] == pytest.approx(0.05 / 3)
+    assert out.loc[2, "threshold"] == pytest.approx(0.05)
+
+
+def test_the_first_failure_stops_every_rejection_after_it() -> None:
+    """Holm is a step-down procedure: past the first survivor nothing else is claimed."""
+    out = holm_correction({"a": 0.001, "b": 0.049, "c": 0.0491}, alpha=0.05)
+    assert list(out["significant"]) == [True, False, False]
+
+
+def test_a_family_where_nothing_survives_is_a_table_of_false() -> None:
+    out = holm_correction({"a": 0.2, "b": 0.5}, alpha=0.05)
+    assert not out["significant"].any()
+
+
+def test_a_single_comparison_is_uncorrected() -> None:
+    out = holm_correction({"only": 0.04}, alpha=0.05)
+    assert out.loc[0, "threshold"] == pytest.approx(0.05)
+    assert bool(out.loc[0, "significant"]) is True
+
+
+def test_an_empty_family_gives_an_empty_table_rather_than_an_error() -> None:
+    assert holm_correction({}).empty

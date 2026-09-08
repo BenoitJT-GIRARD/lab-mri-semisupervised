@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import numpy as np
+import pandas as pd
 
 
 def bootstrap_ci(
@@ -100,4 +101,41 @@ def paired_difference(
     }
 
 
-__all__ = ["bootstrap_ci", "paired_difference"]
+def holm_correction(p_values: dict[str, float], alpha: float = 0.05) -> pd.DataFrame:
+    """Holm-Bonferroni over a family of comparisons, reported in full.
+
+    This repository ran more comparisons than it set out to: four arms, then two more, then
+    several label budgets. Reporting the one that happened to cross 0.05 would be exactly
+    the failure the permuted control exists to prevent, one level up.
+
+    Holm rather than plain Bonferroni because it is uniformly more powerful at the same
+    guarantee, and because it makes the ordering visible: sort ascending, compare the k-th
+    smallest to ``alpha / (m - k)``, and stop at the first that fails — everything after it
+    is rejected too, whatever its raw value.
+
+    Returns one row per comparison with its raw p, its threshold and its verdict, so the
+    table can go in the README as it stands. A family with nothing significant produces a
+    table of ``False``, which is the honest form of that result.
+    """
+    if not p_values:
+        return pd.DataFrame(columns=["comparison", "p_value", "threshold", "significant"])
+
+    ordered = sorted(p_values.items(), key=lambda item: item[1])
+    total = len(ordered)
+    rows, still_rejecting = [], True
+    for rank, (name, p_value) in enumerate(ordered):
+        threshold = alpha / (total - rank)
+        if still_rejecting and p_value > threshold:
+            still_rejecting = False
+        rows.append(
+            {
+                "comparison": name,
+                "p_value": float(p_value),
+                "threshold": float(threshold),
+                "significant": bool(still_rejecting),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+__all__ = ["bootstrap_ci", "holm_correction", "paired_difference"]
