@@ -266,7 +266,9 @@ def fit_pseudo_labels(
         raise ValueError("no feature row matches the requested image ids")
 
     subset, _ = standardise(features[rows])
-    subset, _ = reduce_pca(subset, target_variance=cfg.pca_variance)
+    subset, _ = reduce_pca(
+        subset, target_variance=cfg.pca_variance, max_components=cfg.pca_max_components
+    )
 
     train_id_set = set(train_ids.tolist())
     pool_id_set = set(np.asarray(unlabelled_ids).tolist())

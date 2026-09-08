@@ -35,7 +35,7 @@ from mri_semisupervised.protocol.uncertainty import bootstrap_ci, paired_differe
 HEADLINE = ("roc_auc", "pr_auc", "recall_positive", "f1_macro", "accuracy")
 
 
-def summarise(result) -> str:
+def summarise(result, n_bootstrap: int = 2000) -> str:
     """Build the markdown summary that sits next to the raw artefacts."""
     lines = [f"# {result.run_id}", "", f"Protocol: **{result.mode}**", ""]
 
@@ -61,9 +61,17 @@ def summarise(result) -> str:
         "|---|---|---|",
     ]
     for arm, group in result.predictions.groupby("arm"):
-        roc = bootstrap_ci(group["y_true"].to_numpy(), group["y_score"].to_numpy(), roc_auc_score)
+        roc = bootstrap_ci(
+            group["y_true"].to_numpy(),
+            group["y_score"].to_numpy(),
+            roc_auc_score,
+            n_boot=n_bootstrap,
+        )
         pr = bootstrap_ci(
-            group["y_true"].to_numpy(), group["y_score"].to_numpy(), average_precision_score
+            group["y_true"].to_numpy(),
+            group["y_score"].to_numpy(),
+            average_precision_score,
+            n_boot=n_bootstrap,
         )
         lines.append(
             f"| {arm} | {roc['point']:.3f} [{roc['ci_low']:.3f}, {roc['ci_high']:.3f}] "
@@ -81,7 +89,11 @@ def summarise(result) -> str:
     pivot = result.per_fold.pivot(index="fold", columns="arm")
     for metric in ("roc_auc", "recall_positive"):
         for a, b in [(x, y) for i, x in enumerate(arms) for y in arms[i + 1 :]]:
-            out = paired_difference(pivot[(metric, a)].to_numpy(), pivot[(metric, b)].to_numpy())
+            out = paired_difference(
+                pivot[(metric, a)].to_numpy(),
+                pivot[(metric, b)].to_numpy(),
+                n_boot=n_bootstrap,
+            )
             lines.append(
                 f"| {a} vs {b} | {metric} | {out['mean_difference']:+.3f} "
                 f"| [{out['ci_low']:+.3f}, {out['ci_high']:+.3f}] | {out['p_value']:.3f} |"
@@ -150,7 +162,7 @@ def main() -> None:
         mode=args.mode, protocol=protocol, training=training, run_name=args.out_name
     )
 
-    summary = summarise(result)
+    summary = summarise(result, n_bootstrap=protocol.n_bootstrap)
     (result.directory / "summary.md").write_text(summary, encoding="utf-8")
     print()
     print(summary)

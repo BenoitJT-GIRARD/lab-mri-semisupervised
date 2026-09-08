@@ -13,20 +13,13 @@ dependencies = [
     "pandas>=2.2",
     "pyarrow>=16",
     "pillow>=10",
-    "opencv-python-headless>=4.10",
     "scikit-learn>=1.5",
     "matplotlib>=3.9",
     "seaborn>=0.13",
-    "plotly>=5.22",
     "umap-learn>=0.5.6",
     "tqdm>=4.66",
     "torch>=2.3",
     "torchvision>=0.18",
-    "joblib>=1.4",
-    "scipy>=1.13",
-    "kaleido==0.2.1",
-    "python-pptx>=0.6.23",
-    "reportlab>=4.2",
 ]
 
 [project.optional-dependencies]

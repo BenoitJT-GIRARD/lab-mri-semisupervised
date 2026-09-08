@@ -132,7 +132,7 @@ def discover_images(
 
 
 def records_to_dataframe(records: list[ImageRecord]) -> pd.DataFrame:
-    """Convertit l'inventaire en DataFrame typé."""
+    """Turn the inventory into a typed frame."""
     if not records:
         return pd.DataFrame(
             columns=[

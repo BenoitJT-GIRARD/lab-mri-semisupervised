@@ -161,6 +161,7 @@ def run_experiment(
     mode: str = CORRECTED,
     protocol: ProtocolConfig | None = None,
     training: TrainingConfig | None = None,
+    *,
     output_root: Path | None = None,
     run_name: str | None = None,
     progress: bool = True,

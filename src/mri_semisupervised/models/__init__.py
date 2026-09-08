@@ -1,1 +1,1 @@
-"""Sous-paquet « models » : clustering exploratoire et CNN semi-supervisé."""
+"""The two model families: the exploratory clustering, and the classifier."""

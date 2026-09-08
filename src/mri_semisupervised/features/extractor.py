@@ -40,7 +40,7 @@ def build_backbone(name: str = "resnet50", pretrained: bool = True) -> tuple[nn.
         weights = models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
         net = models.resnet18(weights=weights)
     else:
-        raise ValueError(f"Backbone non supporté : {name}")
+        raise ValueError(f"unsupported backbone: {name!r}")
     feature_dim = net.fc.in_features
     net.fc = nn.Identity()
 

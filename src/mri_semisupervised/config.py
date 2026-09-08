@@ -57,7 +57,6 @@ class FeatureConfig:
     """Parameters of the feature extraction."""
 
     backbone: str = "resnet50"
-    output_dim: int = 2048
     batch_size: int = 32
     num_workers: int = 0  # Windows: 0 avoids the torch pickling trouble
     #: Histogram-equalise before the backbone sees the image. Changes the pixels, so it
@@ -88,9 +87,6 @@ class ClusteringConfig:
     n_clusters: int = 2
     pca_variance: float = 0.95
     pca_max_components: int = 100
-    tsne_perplexity: float = 30.0
-    umap_n_neighbors: int = 15
-    umap_min_dist: float = 0.1
 
 
 @dataclass(frozen=True)

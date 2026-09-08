@@ -41,7 +41,6 @@ def test_extract_features_round_trip(synthetic_dataset: Path, tmp_path: Path) ->
     cache = tmp_path / "features.parquet"
     cfg = FeatureConfig(
         backbone="resnet18",
-        output_dim=512,
         batch_size=4,
         cache_path=cache,
     )
@@ -90,7 +89,6 @@ def _write_cache(
 def _cfg(cache: Path, backbone: str = "resnet18", *, equalize: bool = False) -> FeatureConfig:
     return FeatureConfig(
         backbone=backbone,
-        output_dim=512,
         batch_size=4,
         equalize=equalize,
         cache_path=cache,

@@ -130,7 +130,7 @@ def fit_agglomerative(
     n_clusters: int = 2,
     linkage: str = "ward",
 ) -> ClusteringResult:
-    """Clustering agglomératif."""
+    """Agglomerative clustering."""
     model = AgglomerativeClustering(n_clusters=n_clusters, linkage=linkage)
     labels = model.fit_predict(features)
     sil, db, ch = _safe_internal_metrics(features, labels)

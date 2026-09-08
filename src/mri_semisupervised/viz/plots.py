@@ -11,7 +11,7 @@ import pandas as pd
 import seaborn as sns
 from PIL import Image, ImageOps
 from sklearn.manifold import TSNE
-from sklearn.metrics import RocCurveDisplay, roc_auc_score, roc_curve
+from sklearn.metrics import roc_auc_score, roc_curve
 
 try:
     import umap
@@ -94,13 +94,13 @@ def plot_equalization(
     axes[0][0].set_title("IRM d'origine")
     axes[0][0].axis("off")
     axes[0][1].imshow(equalized, cmap="gray")
-    axes[0][1].set_title("Après égalisation")
+    axes[0][1].set_title("after equalisation")
     axes[0][1].axis("off")
     axes[1][0].hist(original.ravel(), bins=256, range=(0, 255), color="#3182bd")
     axes[1][0].set_title("Histogramme d'origine")
     axes[1][0].set_xlabel("intensity")
     axes[1][1].hist(equalized.ravel(), bins=256, range=(0, 255), color="#fd8d3c")
-    axes[1][1].set_title("Histogramme égalisé")
+    axes[1][1].set_title("equalised histogram")
     axes[1][1].set_xlabel("intensity")
     fig.tight_layout()
     if save_path is not None:
@@ -136,7 +136,7 @@ def project_2d(
             n_components=2, n_neighbors=n_neighbors, min_dist=min_dist, random_state=seed
         )
         return model.fit_transform(features)
-    raise ValueError(f"Méthode 2D inconnue : {method}")
+    raise ValueError(f"unknown 2D projection: {method!r}; expected 'tsne' or 'umap'")
 
 
 def _normalise_label(value: object) -> str:
@@ -202,54 +202,6 @@ def plot_2d_scatter(
     return fig
 
 
-def plot_confusion_matrix(
-    cm: list[list[int]] | np.ndarray,
-    class_names: list[str],
-    title: str = "Matrice de confusion",
-    save_path: Path | None = None,
-) -> plt.Figure:
-    """Confusion matrix as a heatmap."""
-    cm_arr = np.asarray(cm)
-    fig, ax = plt.subplots(figsize=(4.6, 4))
-    sns.heatmap(
-        cm_arr,
-        annot=True,
-        fmt="d",
-        cmap="Blues",
-        xticklabels=class_names,
-        yticklabels=class_names,
-        ax=ax,
-        cbar=False,
-    )
-    ax.set_xlabel("prédiction")
-    ax.set_ylabel("vérité")
-    ax.set_title(title)
-    fig.tight_layout()
-    if save_path is not None:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path, dpi=140, bbox_inches="tight")
-    return fig
-
-
-def plot_roc(
-    y_true: np.ndarray,
-    y_score: np.ndarray,
-    title: str = "Courbe ROC",
-    save_path: Path | None = None,
-) -> plt.Figure:
-    """Courbe ROC (binaire)."""
-    fpr, tpr, _ = roc_curve(y_true, y_score)
-    fig, ax = plt.subplots(figsize=(5, 4.4))
-    RocCurveDisplay(fpr=fpr, tpr=tpr).plot(ax=ax)
-    ax.plot([0, 1], [0, 1], "k--", linewidth=0.8)
-    ax.set_title(title)
-    fig.tight_layout()
-    if save_path is not None:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path, dpi=140, bbox_inches="tight")
-    return fig
-
-
 def plot_roc_compare(
     curves: dict[str, tuple[np.ndarray, np.ndarray]],
     title: str = "Courbes ROC — comparaison",
@@ -278,58 +230,11 @@ def plot_roc_compare(
     return fig
 
 
-def plot_metrics_bar(
-    runs: dict[str, dict[str, float]],
-    metric_name: str = "f1_macro",
-    title: str | None = None,
-    save_path: Path | None = None,
-) -> plt.Figure:
-    """Bar chart comparing several runs on one metric."""
-    df = pd.DataFrame(
-        [{"run": name, metric_name: vals.get(metric_name, np.nan)} for name, vals in runs.items()]
-    )
-    fig, ax = plt.subplots(figsize=(5.5, 3.8))
-    sns.barplot(data=df, x="run", y=metric_name, ax=ax, palette="muted")
-    for p in ax.patches:
-        h = p.get_height()
-        if not np.isnan(h):
-            ax.text(p.get_x() + p.get_width() / 2, h + 0.01, f"{h:.3f}", ha="center", fontsize=9)
-    ax.set_title(title or f"Comparaison {metric_name}")
-    ax.set_ylim(0, 1.05)
-    ax.set_xlabel("")
-    fig.tight_layout()
-    if save_path is not None:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path, dpi=140, bbox_inches="tight")
-    return fig
-
-
-def plot_history(history_df: pd.DataFrame, save_path: Path | None = None) -> plt.Figure:
-    """Loss and accuracy curves, split by training phase."""
-    fig, axes = plt.subplots(1, 2, figsize=(11, 3.8))
-    sns.lineplot(data=history_df, x="step", y="train_loss", hue="phase", ax=axes[0], marker="o")
-    axes[0].set_title("Loss par phase")
-    axes[0].set_xlabel("étape")
-    sns.lineplot(data=history_df, x="step", y="train_acc", hue="phase", ax=axes[1], marker="o")
-    axes[1].set_title("Accuracy par phase")
-    axes[1].set_xlabel("étape")
-    axes[1].set_ylim(0, 1.05)
-    fig.tight_layout()
-    if save_path is not None:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path, dpi=140, bbox_inches="tight")
-    return fig
-
-
 __all__ = [
     "plot_2d_scatter",
-    "plot_confusion_matrix",
     "plot_equalization",
-    "plot_history",
     "plot_image_grid",
-    "plot_metrics_bar",
     "plot_pixel_stats",
-    "plot_roc",
     "plot_roc_compare",
     "project_2d",
 ]
