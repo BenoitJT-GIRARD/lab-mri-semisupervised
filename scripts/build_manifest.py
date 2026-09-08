@@ -22,7 +22,7 @@ def main() -> None:
     ensure_dirs()
     if not LABELED_DIR.exists():
         print(f"[warn] dataset not found under {LABELED_DIR.parent}.")
-        print("       set MRI_DATA_DIR, or run scripts/extract_dataset.py first.")
+        print("       point MRI_DATA_DIR at the folder that holds the dataset.")
         return
 
     print(f"[info] scanning {LABELED_DIR.parent}")
