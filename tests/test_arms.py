@@ -18,9 +18,11 @@ if importlib.util.find_spec("torch") is None:  # pragma: no cover
 
 from mri_semisupervised.config import TrainingConfig
 from mri_semisupervised.protocol.arms import (
+    JOINT_PERMUTED_CONTROL,
     PERMUTED_CONTROL,
     SEMI_SUPERVISED,
     SEMI_SUPERVISED_CONFIDENT,
+    SEMI_SUPERVISED_JOINT,
     SUPERVISED,
     budget_steps,
     run_arm,
@@ -126,3 +128,66 @@ def test_every_arm_scores_the_test_images_and_only_those(fold) -> None:
 def test_an_unknown_arm_is_refused_by_name(fold) -> None:
     with pytest.raises(ValueError, match="unknown arm"):
         _run("semi_supervised_confident_v2", fold)
+
+
+def test_the_joint_arm_never_pretrains(fold) -> None:
+    """Its whole point is that the pseudo-labels are not left behind by the fine-tuning."""
+    result = _run(SEMI_SUPERVISED_JOINT, fold)
+
+    assert result.pretrain_steps == 0
+    assert result.n_pseudo_used > 0
+    assert result.pseudo_weight == TINY.pseudo_loss_weight
+
+
+def test_the_joint_arm_sees_the_labels_as_often_as_the_baseline(fold) -> None:
+    """The epoch is counted in labelled batches; the pseudo-labels are the only addition."""
+    plain = _run(SUPERVISED, fold)
+    joint = _run(SEMI_SUPERVISED_JOINT, fold)
+
+    assert joint.finetune_steps == plain.finetune_steps
+
+
+def test_the_joint_control_uses_the_same_images_with_the_pairing_destroyed(fold) -> None:
+    joint = _run(SEMI_SUPERVISED_JOINT, fold)
+    control = _run(JOINT_PERMUTED_CONTROL, fold)
+
+    assert set(joint.pretrain_image_ids) == set(control.pretrain_image_ids)
+    assert control.n_pseudo_used == joint.n_pseudo_used
+
+
+def test_a_zero_weight_still_moves_the_predictions_because_of_batchnorm(fold) -> None:
+    """The joint arm carries a second treatment, and it must be named rather than hidden.
+
+    With the pseudo loss weighted to zero the gradient is identical — the training loss is
+    the same to the last digit — and the predictions still differ. The pseudo batches go
+    through the network in train mode, so BatchNorm updates its running statistics on the
+    unlabelled pool. That is unsupervised adaptation to the target distribution, and it is
+    arguably a form of semi-supervision in its own right.
+
+    It is also why the joint arm may only be judged against the joint control, which passes
+    exactly the same images through the same BatchNorm. Compared against the plain
+    supervised baseline, the two treatments would be indistinguishable.
+    """
+    from dataclasses import replace
+
+    paths_by_id, inner_train, inner_val, test, pseudo = fold
+    zeroed = replace(TINY, pseudo_loss_weight=0.0)
+    joint = run_arm(
+        SEMI_SUPERVISED_JOINT,
+        fold_name="f0",
+        paths_by_id=paths_by_id,
+        inner_train=inner_train,
+        inner_val=inner_val,
+        test=test,
+        pseudo=pseudo,
+        cfg=zeroed,
+        seed=0,
+    )
+    plain = _run(SUPERVISED, fold)
+
+    assert joint.history[0]["train_loss"] == pytest.approx(plain.history[0]["train_loss"]), (
+        "a zero weight must leave the loss untouched"
+    )
+    assert not np.allclose(joint.y_score, plain.y_score, atol=1e-6), (
+        "the batchnorm statistics did absorb the pool, and the arm must be read knowing it"
+    )

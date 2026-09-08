@@ -249,13 +249,19 @@ def test_every_evaluation_image_is_tested_once_per_repeat(wired, tmp_path: Path)
         assert sorted(tested) == sorted(labelled_ids), f"repeat {repeat} did not cover the set"
 
 
-def test_the_configured_arms_and_the_implemented_arms_cannot_drift() -> None:
-    """ProtocolConfig.arms is spelled out; ARMS is the truth. They must agree.
+def test_no_implemented_arm_can_be_written_and_then_never_run() -> None:
+    """ARMS is the registry of what exists; ProtocolConfig.arms is what runs by default.
 
-    Caught in the act on 2026-09-03: the fourth arm was added to ARMS and not to the
-    config, so the experiment ran three arms while every test passed.
+    Caught in the act on 2026-09-03: a fourth arm was added to ARMS and not to the config,
+    so the experiment ran three arms while every test passed. An arm may legitimately be
+    opt-in — the joint arms answer a separate question and cost a run of their own — but it
+    has to say so by being listed, not by being forgotten.
     """
     from mri_semisupervised.config import ProtocolConfig
-    from mri_semisupervised.protocol.arms import ARMS
+    from mri_semisupervised.protocol.arms import ARMS, OPTIONAL_ARMS
 
-    assert ProtocolConfig().arms == ARMS
+    default = set(ProtocolConfig().arms)
+    assert default <= set(ARMS), "the config names an arm that does not exist"
+    assert set(ARMS) - default == set(OPTIONAL_ARMS), (
+        "every implemented arm must be run by default or declared opt-in"
+    )

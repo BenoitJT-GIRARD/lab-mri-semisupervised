@@ -120,6 +120,10 @@ class TrainingConfig:
     confidence_quantiles: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75)
     #: Histogram-equalise in both transforms. Must match the FeatureConfig the run reads.
     equalize: bool = False
+    #: Weight on the pseudo-label loss for the joint arms. Fixed rather than tuned: the
+    #: hypothesis under test is that the sequential pre-training is forgotten, not what the
+    #: best weight would be, and tuning it would conflate the two questions.
+    pseudo_loss_weight: float = 1.0
 
 
 @dataclass(frozen=True)

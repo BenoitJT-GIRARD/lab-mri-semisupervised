@@ -46,8 +46,36 @@ SUPERVISED = "supervised"
 SEMI_SUPERVISED = "semi_supervised"
 SEMI_SUPERVISED_CONFIDENT = "semi_supervised_confident"
 PERMUTED_CONTROL = "permuted_control"
-ARMS = (SUPERVISED, SEMI_SUPERVISED, SEMI_SUPERVISED_CONFIDENT, PERMUTED_CONTROL)
-PRETRAINING_ARMS = (SEMI_SUPERVISED, SEMI_SUPERVISED_CONFIDENT, PERMUTED_CONTROL)
+#: Pseudo-labels carried through fine-tuning instead of being left behind by it. The
+#: sequential arms pre-train for 246 steps and then converge in two to four epochs, so
+#: whatever the pre-training taught has every opportunity to be forgotten. These two put
+#: the pseudo-label loss beside the supervised one at every step, and the second is the
+#: control that tells information apart from extra gradient work.
+SEMI_SUPERVISED_JOINT = "semi_supervised_joint"
+JOINT_PERMUTED_CONTROL = "joint_permuted_control"
+
+#: Every implemented arm. A test asserts each one is either run by default or listed as
+#: opt-in, so an arm cannot be written and then quietly never run.
+ARMS = (
+    SUPERVISED,
+    SEMI_SUPERVISED,
+    SEMI_SUPERVISED_CONFIDENT,
+    PERMUTED_CONTROL,
+    SEMI_SUPERVISED_JOINT,
+    JOINT_PERMUTED_CONTROL,
+)
+#: Arms that need the fold's pseudo-labels.
+PRETRAINING_ARMS = (
+    SEMI_SUPERVISED,
+    SEMI_SUPERVISED_CONFIDENT,
+    PERMUTED_CONTROL,
+    SEMI_SUPERVISED_JOINT,
+    JOINT_PERMUTED_CONTROL,
+)
+#: Arms that train on both losses at once rather than in two phases.
+JOINT_ARMS = (SEMI_SUPERVISED_JOINT, JOINT_PERMUTED_CONTROL)
+#: Opt-in via ``--arms``: they answer a separate question and cost a run of their own.
+OPTIONAL_ARMS = JOINT_ARMS
 
 
 @dataclass
@@ -69,6 +97,8 @@ class ArmResult:
     confidence_quantile: float | None = None
     #: Pseudo-labels actually pre-trained on, after filtering.
     n_pseudo_used: int = 0
+    #: Weight on the pseudo-label loss, for the joint arms only.
+    pseudo_weight: float | None = None
     history: list[dict] = field(default_factory=list)
 
     @property
@@ -196,6 +226,55 @@ def _pretrain(
     return steps, history
 
 
+def _train_epoch_joint(
+    model,
+    labelled_loader,
+    pseudo_loader,
+    optimiser,
+    criterion,
+    dev,
+    *,
+    weight: float,
+) -> tuple[float, int]:
+    """One epoch of ``supervised loss + weight * pseudo-label loss``, both at every step.
+
+    One pseudo batch per labelled batch, cycling the pseudo loader, so the two losses carry
+    the same number of examples per step and ``weight`` alone decides their relative pull.
+    The epoch is counted in labelled batches: the arm sees the labels exactly as often as
+    the supervised baseline does, and the pseudo-labels are the only thing added.
+
+    One consequence has to be said out loud. The pseudo batches go through the network in
+    train mode, so BatchNorm updates its running statistics on the unlabelled pool even
+    when ``weight`` is zero. That is unsupervised adaptation to the target distribution,
+    arguably a form of semi-supervision in itself, and it means this arm carries two
+    treatments rather than one. It is why the joint arm is only ever compared to the joint
+    control, which pushes exactly the same images through exactly the same BatchNorm: the
+    difference between them is the label information and nothing else.
+    """
+    model.train()
+    total, steps = 0.0, 0
+    pseudo_iterator = iter(pseudo_loader)
+    for batch, targets in labelled_loader:
+        try:
+            weak_batch, weak_targets = next(pseudo_iterator)
+        except StopIteration:
+            pseudo_iterator = iter(pseudo_loader)
+            weak_batch, weak_targets = next(pseudo_iterator)
+
+        batch, targets = batch.to(dev), targets.to(dev)
+        weak_batch, weak_targets = weak_batch.to(dev), weak_targets.to(dev)
+
+        optimiser.zero_grad(set_to_none=True)
+        loss = criterion(model(batch), targets) + weight * criterion(
+            model(weak_batch), weak_targets
+        )
+        loss.backward()
+        optimiser.step()
+        total += float(loss.item()) * batch.size(0)
+        steps += 1
+    return total / max(len(labelled_loader.dataset), 1), steps
+
+
 def run_arm(
     arm: str,
     *,
@@ -244,6 +323,22 @@ def run_arm(
     model = fresh_model()
     pretrain_steps, history, pretrain_ids = 0, [], ()
     quantile, n_pseudo_used = None, 0
+    pseudo_loader, pseudo_weight = None, None
+
+    if arm in JOINT_ARMS:
+        # No pre-training phase at all. The pseudo-labels ride alongside the supervised
+        # loss for the whole of training, which is the difference being tested.
+        used = pseudo if arm == SEMI_SUPERVISED_JOINT else permute(pseudo, seed)
+        pretrain_ids = tuple(used.image_ids.tolist())
+        n_pseudo_used = len(used)
+        pseudo_weight = cfg.pseudo_loss_weight
+        pseudo_loader = _loader(
+            [paths_by_id[i] for i in used.image_ids],
+            list(used.labels),
+            cfg,
+            train=True,
+            seed=seed,
+        )
 
     if arm in (SEMI_SUPERVISED, PERMUTED_CONTROL):
         used = pseudo if arm == SEMI_SUPERVISED else permute(pseudo, seed)
@@ -306,7 +401,18 @@ def run_arm(
     best_score, best_epoch, best_state, waited = -np.inf, 0, None, 0
     finetune_steps = 0
     for epoch in range(1, cfg.epochs_strong + 1):
-        loss, epoch_steps = _train_epoch(model, train_loader, optimiser, criterion, dev)
+        if pseudo_loader is not None:
+            loss, epoch_steps = _train_epoch_joint(
+                model,
+                train_loader,
+                pseudo_loader,
+                optimiser,
+                criterion,
+                dev,
+                weight=pseudo_weight,
+            )
+        else:
+            loss, epoch_steps = _train_epoch(model, train_loader, optimiser, criterion, dev)
         finetune_steps += epoch_steps
         val_true, val_score = _predict(model, val_loader, dev)
         score = _validation_score(val_true, val_score)
@@ -340,16 +446,21 @@ def run_arm(
         pretrain_image_ids=pretrain_ids,
         confidence_quantile=quantile,
         n_pseudo_used=n_pseudo_used,
+        pseudo_weight=pseudo_weight,
         history=history,
     )
 
 
 __all__ = [
     "ARMS",
+    "JOINT_ARMS",
+    "JOINT_PERMUTED_CONTROL",
+    "OPTIONAL_ARMS",
     "PERMUTED_CONTROL",
     "PRETRAINING_ARMS",
     "SEMI_SUPERVISED",
     "SEMI_SUPERVISED_CONFIDENT",
+    "SEMI_SUPERVISED_JOINT",
     "SUPERVISED",
     "ArmResult",
     "budget_steps",
