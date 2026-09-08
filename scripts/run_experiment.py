@@ -115,6 +115,11 @@ def main() -> None:
         default=None,
         help="comma-separated subset of the arms, for a cheaper sweep",
     )
+    parser.add_argument(
+        "--out-name",
+        default=None,
+        help="output directory name under reports/experiments/, if not the default",
+    )
     args = parser.parse_args()
 
     ensure_dirs()
@@ -141,7 +146,9 @@ def main() -> None:
         f"repeats={protocol.n_repeats} budget={protocol.label_budget} "
         f"arms={len(protocol.arms)}"
     )
-    result = run_experiment(mode=args.mode, protocol=protocol, training=training)
+    result = run_experiment(
+        mode=args.mode, protocol=protocol, training=training, run_name=args.out_name
+    )
 
     summary = summarise(result)
     (result.directory / "summary.md").write_text(summary, encoding="utf-8")
