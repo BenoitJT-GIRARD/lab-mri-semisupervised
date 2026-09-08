@@ -124,6 +124,10 @@ class TrainingConfig:
     #: hypothesis under test is that the sequential pre-training is forgotten, not what the
     #: best weight would be, and tuning it would conflate the two questions.
     pseudo_loss_weight: float = 1.0
+    #: A pool image is self-labelled when the first pass puts it beyond this probability,
+    #: on either side. 0.9 rather than a tuned value: the question is whether labels from
+    #: the decision function beat labels from a clustering, not where the best cut sits.
+    self_training_threshold: float = 0.9
 
 
 @dataclass(frozen=True)

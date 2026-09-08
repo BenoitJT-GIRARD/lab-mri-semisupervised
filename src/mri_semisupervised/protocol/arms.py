@@ -53,6 +53,12 @@ PERMUTED_CONTROL = "permuted_control"
 #: control that tells information apart from extra gradient work.
 SEMI_SUPERVISED_JOINT = "semi_supervised_joint"
 JOINT_PERMUTED_CONTROL = "joint_permuted_control"
+#: Pseudo-labels taken from the decision function being optimised rather than from a
+#: k-means on ImageNet embeddings. The clustering reaches an ARI of 0.46 against the
+#: training labels, so its clusters and the classes only half agree; a first supervised
+#: pass has at least been asked the right question.
+SELF_TRAINING = "self_training"
+SELF_TRAINING_CONTROL = "self_training_control"
 
 #: Every implemented arm. A test asserts each one is either run by default or listed as
 #: opt-in, so an arm cannot be written and then quietly never run.
@@ -63,6 +69,8 @@ ARMS = (
     PERMUTED_CONTROL,
     SEMI_SUPERVISED_JOINT,
     JOINT_PERMUTED_CONTROL,
+    SELF_TRAINING,
+    SELF_TRAINING_CONTROL,
 )
 #: Arms that need the fold's pseudo-labels.
 PRETRAINING_ARMS = (
@@ -72,10 +80,13 @@ PRETRAINING_ARMS = (
     SEMI_SUPERVISED_JOINT,
     JOINT_PERMUTED_CONTROL,
 )
+#: Arms that build their own pseudo-labels from a first supervised pass. They need the
+#: pool's image ids, which they take from ``pseudo``, and none of its labels.
+SELF_TRAINING_ARMS = (SELF_TRAINING, SELF_TRAINING_CONTROL)
 #: Arms that train on both losses at once rather than in two phases.
 JOINT_ARMS = (SEMI_SUPERVISED_JOINT, JOINT_PERMUTED_CONTROL)
 #: Opt-in via ``--arms``: they answer a separate question and cost a run of their own.
-OPTIONAL_ARMS = JOINT_ARMS
+OPTIONAL_ARMS = JOINT_ARMS + SELF_TRAINING_ARMS
 
 
 @dataclass
@@ -99,6 +110,9 @@ class ArmResult:
     n_pseudo_used: int = 0
     #: Weight on the pseudo-label loss, for the joint arms only.
     pseudo_weight: float | None = None
+    #: Pool images whose own prediction was confident enough to be reused, for the
+    #: self-training arms only.
+    n_self_labelled: int | None = None
     history: list[dict] = field(default_factory=list)
 
     @property
@@ -232,8 +246,8 @@ def _train_epoch_joint(
     pseudo_loader,
     optimiser,
     criterion,
-    dev,
     *,
+    dev,
     weight: float,
 ) -> tuple[float, int]:
     """One epoch of ``supervised loss + weight * pseudo-label loss``, both at every step.
@@ -275,6 +289,69 @@ def _train_epoch_joint(
     return total / max(len(labelled_loader.dataset), 1), steps
 
 
+def _finetune(
+    model,
+    train_loader,
+    val_loader,
+    cfg: TrainingConfig,
+    dev: torch.device,
+    *,
+    history: list[dict],
+    warm_start: bool = False,
+    pseudo_loader=None,
+    pseudo_weight: float | None = None,
+    phase: str = "finetune",
+) -> tuple[int, int]:
+    """Train on the labels, keeping the epoch that scores best on the inner validation.
+
+    Returns the number of steps taken and the epoch kept. The checkpoint criterion is the
+    validation ROC AUC, never the training accuracy: on sixteen validation images accuracy
+    moves in steps of 0.0625 and ties constantly, which turns selection into a coin toss.
+
+    ``pseudo_loader`` switches the epoch to the joint form. ``warm_start`` lowers the
+    learning rate for a model that has already been pre-trained.
+    """
+    optimiser = torch.optim.AdamW(
+        model.parameters(),
+        lr=cfg.learning_rate * (cfg.finetune_lr_factor if warm_start else 1.0),
+        weight_decay=cfg.weight_decay,
+    )
+    criterion = nn.CrossEntropyLoss()
+
+    best_score, best_epoch, best_state, waited = -np.inf, 0, None, 0
+    steps = 0
+    for epoch in range(1, cfg.epochs_strong + 1):
+        if pseudo_loader is not None:
+            loss, epoch_steps = _train_epoch_joint(
+                model,
+                train_loader,
+                pseudo_loader,
+                optimiser,
+                criterion,
+                dev=dev,
+                weight=pseudo_weight,
+            )
+        else:
+            loss, epoch_steps = _train_epoch(model, train_loader, optimiser, criterion, dev)
+        steps += epoch_steps
+        val_true, val_score = _predict(model, val_loader, dev)
+        score = _validation_score(val_true, val_score)
+        history.append({"phase": phase, "epoch": epoch, "train_loss": loss, "val_auc": score})
+
+        if np.isnan(score) or score <= best_score:
+            waited += 1
+            if waited >= cfg.early_stopping_patience:
+                break
+            continue
+
+        best_score, best_epoch, waited = score, epoch, 0
+        best_state = copy.deepcopy(model.state_dict())
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    return steps, best_epoch
+
+
 def run_arm(
     arm: str,
     *,
@@ -294,7 +371,7 @@ def run_arm(
     """
     if arm not in ARMS:
         raise ValueError(f"unknown arm: {arm}")
-    if arm in PRETRAINING_ARMS and pseudo is None:
+    if arm in (*PRETRAINING_ARMS, *SELF_TRAINING_ARMS) and pseudo is None:
         raise ValueError(f"arm {arm} needs pseudo-labels")
 
     dev = torch.device(device())
@@ -322,7 +399,7 @@ def run_arm(
 
     model = fresh_model()
     pretrain_steps, history, pretrain_ids = 0, [], ()
-    quantile, n_pseudo_used = None, 0
+    quantile, n_pseudo_used, n_self_labelled = None, 0, None
     pseudo_loader, pseudo_weight = None, None
 
     if arm in JOINT_ARMS:
@@ -340,7 +417,46 @@ def run_arm(
             seed=seed,
         )
 
-    if arm in (SEMI_SUPERVISED, PERMUTED_CONTROL):
+    if arm in SELF_TRAINING_ARMS:
+        # A first supervised pass, then its own confident predictions on the pool as
+        # pseudo-labels, then a pre-training on those. The labels come from the decision
+        # function actually being optimised instead of from a k-means on embeddings whose
+        # dominant structure turned out to be acquisition contrast.
+        scout = fresh_model()
+        _finetune(scout, train_loader, val_loader, cfg, dev, history=history, phase="scout")
+        pool_paths = [paths_by_id[i] for i in pseudo.image_ids]
+        pool_loader = _loader(pool_paths, [0] * len(pool_paths), cfg, train=False, seed=seed)
+        _, scores = _predict(scout, pool_loader, dev)
+
+        keep = (scores >= cfg.self_training_threshold) | (
+            scores <= 1.0 - cfg.self_training_threshold
+        )
+        if not keep.any():
+            keep = np.zeros(len(scores), dtype=bool)
+            keep[np.argsort(np.abs(scores - 0.5))[-cfg.batch_size :]] = True
+
+        self_labels = (scores[keep] >= 0.5).astype(int)
+        used = PseudoLabelSet(
+            method_name="self-training",
+            ari_on_train=float("nan"),
+            image_ids=pseudo.image_ids[keep],
+            labels=self_labels,
+            confidence=np.abs(scores[keep] - 0.5) * 2.0,
+            n_noise=int((~keep).sum()),
+        )
+        if arm == SELF_TRAINING_CONTROL:
+            used = permute(used, seed)
+
+        pretrain_ids = tuple(used.image_ids.tolist())
+        n_pseudo_used = len(used)
+        n_self_labelled = len(used)
+        model = fresh_model()
+        pretrain_steps, pretrain_history = _pretrain(
+            model, used, paths_by_id, cfg=cfg, dev=dev, seed=seed
+        )
+        history.extend(pretrain_history)
+
+    elif arm in (SEMI_SUPERVISED, PERMUTED_CONTROL):
         used = pseudo if arm == SEMI_SUPERVISED else permute(pseudo, seed)
         pretrain_ids = tuple(used.image_ids.tolist())
         n_pseudo_used = len(used)
@@ -391,44 +507,17 @@ def run_arm(
         seed=seed,
     )
 
-    optimiser = torch.optim.AdamW(
-        model.parameters(),
-        lr=cfg.learning_rate * (cfg.finetune_lr_factor if pretrain_steps else 1.0),
-        weight_decay=cfg.weight_decay,
+    finetune_steps, best_epoch = _finetune(
+        model,
+        train_loader,
+        val_loader,
+        cfg,
+        dev,
+        history=history,
+        warm_start=bool(pretrain_steps),
+        pseudo_loader=pseudo_loader,
+        pseudo_weight=pseudo_weight,
     )
-    criterion = nn.CrossEntropyLoss()
-
-    best_score, best_epoch, best_state, waited = -np.inf, 0, None, 0
-    finetune_steps = 0
-    for epoch in range(1, cfg.epochs_strong + 1):
-        if pseudo_loader is not None:
-            loss, epoch_steps = _train_epoch_joint(
-                model,
-                train_loader,
-                pseudo_loader,
-                optimiser,
-                criterion,
-                dev,
-                weight=pseudo_weight,
-            )
-        else:
-            loss, epoch_steps = _train_epoch(model, train_loader, optimiser, criterion, dev)
-        finetune_steps += epoch_steps
-        val_true, val_score = _predict(model, val_loader, dev)
-        score = _validation_score(val_true, val_score)
-        history.append({"phase": "finetune", "epoch": epoch, "train_loss": loss, "val_auc": score})
-
-        if np.isnan(score) or score <= best_score:
-            waited += 1
-            if waited >= cfg.early_stopping_patience:
-                break
-            continue
-
-        best_score, best_epoch, waited = score, epoch, 0
-        best_state = copy.deepcopy(model.state_dict())
-
-    if best_state is not None:
-        model.load_state_dict(best_state)
 
     val_true, val_score = _predict(model, val_loader, dev)
     y_true, y_score = _predict(model, test_loader, dev)
@@ -447,6 +536,7 @@ def run_arm(
         confidence_quantile=quantile,
         n_pseudo_used=n_pseudo_used,
         pseudo_weight=pseudo_weight,
+        n_self_labelled=n_self_labelled,
         history=history,
     )
 
@@ -458,6 +548,9 @@ __all__ = [
     "OPTIONAL_ARMS",
     "PERMUTED_CONTROL",
     "PRETRAINING_ARMS",
+    "SELF_TRAINING",
+    "SELF_TRAINING_ARMS",
+    "SELF_TRAINING_CONTROL",
     "SEMI_SUPERVISED",
     "SEMI_SUPERVISED_CONFIDENT",
     "SEMI_SUPERVISED_JOINT",

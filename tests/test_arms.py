@@ -20,6 +20,8 @@ from mri_semisupervised.config import TrainingConfig
 from mri_semisupervised.protocol.arms import (
     JOINT_PERMUTED_CONTROL,
     PERMUTED_CONTROL,
+    SELF_TRAINING,
+    SELF_TRAINING_CONTROL,
     SEMI_SUPERVISED,
     SEMI_SUPERVISED_CONFIDENT,
     SEMI_SUPERVISED_JOINT,
@@ -191,3 +193,62 @@ def test_a_zero_weight_still_moves_the_predictions_because_of_batchnorm(fold) ->
     assert not np.allclose(joint.y_score, plain.y_score, atol=1e-6), (
         "the batchnorm statistics did absorb the pool, and the arm must be read knowing it"
     )
+
+
+def test_self_training_builds_its_labels_from_its_own_first_pass(fold) -> None:
+    """The pseudo-labels come from the decision function, not from a clustering."""
+    result = _run(SELF_TRAINING, fold)
+
+    assert result.n_self_labelled is not None
+    assert result.n_self_labelled == result.n_pseudo_used > 0
+    assert result.pretrain_steps > 0
+    assert any(entry["phase"] == "scout" for entry in result.history)
+
+
+def test_self_training_ignores_the_clustering_labels_it_is_handed(fold) -> None:
+    """Only the pool's identities are taken from `pseudo`; its labels are never read."""
+    from dataclasses import replace
+
+    paths_by_id, inner_train, inner_val, test, pseudo = fold
+    flipped = replace(pseudo, labels=1 - pseudo.labels)
+
+    a = _run(SELF_TRAINING, fold)
+    b = run_arm(
+        SELF_TRAINING,
+        fold_name="f0",
+        paths_by_id=paths_by_id,
+        inner_train=inner_train,
+        inner_val=inner_val,
+        test=test,
+        pseudo=flipped,
+        cfg=TINY,
+        seed=0,
+    )
+    np.testing.assert_allclose(a.y_score, b.y_score)
+
+
+def test_the_self_training_control_keeps_the_same_images(fold) -> None:
+    a = _run(SELF_TRAINING, fold)
+    b = _run(SELF_TRAINING_CONTROL, fold)
+
+    assert set(a.pretrain_image_ids) == set(b.pretrain_image_ids)
+
+
+def test_a_pool_where_nothing_is_confident_still_yields_a_pretraining_set(fold) -> None:
+    """A first pass that is sure of nothing must not silently turn the arm into a baseline."""
+    from dataclasses import replace
+
+    paths_by_id, inner_train, inner_val, test, pseudo = fold
+    impossible = replace(TINY, self_training_threshold=1.01)
+    result = run_arm(
+        SELF_TRAINING,
+        fold_name="f0",
+        paths_by_id=paths_by_id,
+        inner_train=inner_train,
+        inner_val=inner_val,
+        test=test,
+        pseudo=pseudo,
+        cfg=impossible,
+        seed=0,
+    )
+    assert result.n_self_labelled > 0
