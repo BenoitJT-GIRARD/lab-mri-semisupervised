@@ -1,7 +1,6 @@
 name: CI
 
-# No `schedule` trigger: this repository is finished, and a nightly build that nobody
-# reads would burn minutes to turn red on its own one day.
+# No `schedule` trigger. Nothing in this repository changes on its own.
 on:
   push:
     branches: ["main", "feat/**"]
@@ -28,8 +27,7 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen --extra dev
 
-      # Checks only. Nothing here rewrites the tree: a job that formats before it
-      # verifies always passes, and tells you nothing.
+      # Read-only steps: the tree that is verified is the tree that was pushed.
       - name: Ruff
         run: uv run ruff check .
 
