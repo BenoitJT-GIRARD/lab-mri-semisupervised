@@ -1,4 +1,4 @@
-# Respecter les fins de ligne (LF) sauf pour les scripts Windows.
+# Line endings are normalised to LF in the repository, whatever the platform commits.
 * text=auto eol=lf
 
 *.py text eol=lf
@@ -6,21 +6,11 @@
 *.md text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
-*.cfg text eol=lf
-*.ini text eol=lf
 
-*.bat text eol=crlf
-*.cmd text eol=crlf
-*.ps1 text eol=crlf
+# Notebooks are JSON. They are text, but never merged by union: git would splice two
+# versions into a file no reader can open, and report no conflict.
+*.ipynb text eol=lf
 
-# Notebooks : JSON, traités comme texte mais sans réécriture EOL agressive.
-*.ipynb text eol=lf merge=union
-
-# Binaires.
+# Binary: never converted on checkout, never diffed as text.
 *.png binary
-*.jpg binary
-*.jpeg binary
-*.pdf binary
-*.zip binary
 *.parquet binary
-*.npy binary
