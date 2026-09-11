@@ -15,10 +15,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
 
       - name: Set up Python
         run: uv python install 3.12
@@ -26,7 +26,7 @@ jobs:
       # Resolves to the +cpu torch wheels here — see the index markers in pyproject.toml.
       # The runner has no GPU, and the CUDA build would add about three gigabytes.
       - name: Sync dependencies
-        run: uv sync --extra dev
+        run: uv sync --frozen --extra dev
 
       # Checks only. Nothing here rewrites the tree: a job that formats before it
       # verifies always passes, and tells you nothing.
