@@ -136,7 +136,7 @@ branch = true
 data_file = "var/.coverage"
 # Vendored copies of portfolio tooling, identical in every repository and tested where they
 # are written: counting them here would measure someone else's tests.
-omit = ["*/figure_style.py", "scripts/run_notebooks.py"]
+omit = ["*/figure_style.py", "scripts/run_notebooks.py", "scripts/smoke.py"]
 
 [tool.coverage.report]
 # The floor is the rate measured the day the three tiers were completed, rounded down. A

@@ -26,7 +26,7 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import date
+from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 
 from mri_semisupervised.config import PROJECT_ROOT as ROOT_DIR
@@ -139,7 +139,7 @@ def main() -> int:
 
     evidence = {
         "command": COMMAND,
-        "ran_at": date.today().isoformat(),
+        "ran_at": datetime.now(tz=UTC).date().isoformat(),
         "git_revision": _git("rev-parse", "HEAD"),
         "tool_versions": tool_versions(),
         "duration_seconds": duration,
