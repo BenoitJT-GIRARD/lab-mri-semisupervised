@@ -7,14 +7,10 @@ to catch a fourth arm that raises on its first fold after forty minutes of GPU t
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import numpy as np
 import pytest
-
-if importlib.util.find_spec("torch") is None:  # pragma: no cover
-    pytest.skip("torch indisponible", allow_module_level=True)
 
 from mri_semisupervised.config import TrainingConfig
 from mri_semisupervised.protocol.arms import (

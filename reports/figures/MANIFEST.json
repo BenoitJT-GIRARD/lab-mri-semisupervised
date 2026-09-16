@@ -1,0 +1,152 @@
+{
+  "images": {
+    "arms_comparison.png": {
+      "axes": [
+        {
+          "title": "",
+          "x": "arm",
+          "y": "ROC AUC"
+        },
+        {
+          "title": "",
+          "x": "arm",
+          "y": "PR AUC"
+        },
+        {
+          "title": "",
+          "x": "arm",
+          "y": "recall, cancer class"
+        },
+        {
+          "title": "",
+          "x": "arm",
+          "y": "F1, macro"
+        }
+      ],
+      "dispersion": "±1 standard deviation across folds",
+      "dpi": 200,
+      "n": "n(evaluation images) = 99, n(folds) = 25",
+      "sha256": "9f5482dc1a6a00decd8eb99338ad4e663add9e1c554fd2075c6ae20f4bc59dac",
+      "source": "scripts/build_figures.py",
+      "style_version": 1,
+      "written": "2026-09-15"
+    },
+    "calibration.png": {
+      "axes": [
+        {
+          "title": "",
+          "x": "mean predicted probability, equal-population bins",
+          "y": "observed cancer rate"
+        }
+      ],
+      "dispersion": null,
+      "dpi": 200,
+      "n": "n(evaluation images) = 99, n(folds) = 25",
+      "sha256": "4b526dd85c57a612e5d994d1763e89933c03855d42909f3de3e35f2ed2b1d3ec",
+      "source": "scripts/build_figures.py",
+      "style_version": 1,
+      "written": "2026-09-15"
+    },
+    "label_efficiency.png": {
+      "axes": [
+        {
+          "title": "",
+          "x": "training labels per fold",
+          "y": "ROC AUC"
+        },
+        {
+          "title": "",
+          "x": "training labels per fold",
+          "y": "semi-supervised minus\npermuted control"
+        }
+      ],
+      "dispersion": "top: ±1 SD across folds; bottom: 95 % bootstrap interval",
+      "dpi": 200,
+      "n": "n(evaluation images) = 99, n(folds) = 25, n(budgets) = 4",
+      "sha256": "8cf241176a33e8d57da7619eb5c14464aa17b2d16ff4352484c4cbda148d1abc",
+      "source": "scripts/build_figures.py",
+      "style_version": 1,
+      "written": "2026-09-15"
+    },
+    "leak_price.png": {
+      "axes": [
+        {
+          "title": "",
+          "x": "difference in ROC AUC",
+          "y": "arm"
+        },
+        {
+          "title": "",
+          "x": "difference in recall, cancer class",
+          "y": "arm"
+        }
+      ],
+      "dispersion": "95 % bootstrap interval on the paired difference",
+      "dpi": 200,
+      "n": "n(evaluation images) = 99, n(folds) = 25",
+      "sha256": "01533a47c50edc8c0d68789c1cd04a80f6b909ae3515999887159935e15e2b84",
+      "source": "scripts/build_figures.py",
+      "style_version": 1,
+      "written": "2026-09-15"
+    },
+    "mechanisms.png": {
+      "axes": [
+        {
+          "title": "",
+          "x": "difference in ROC AUC, arm minus its own control",
+          "y": "mechanism tested"
+        }
+      ],
+      "dispersion": "95 % bootstrap interval on the paired difference",
+      "dpi": 200,
+      "n": "n(evaluation images) = 99, n(folds) = 25, n(comparisons) = 4",
+      "sha256": "6d2ae1000bc96f51f95cba4f116a60da8c72181da85693b88becb2d006549740",
+      "source": "scripts/build_figures.py",
+      "style_version": 1,
+      "written": "2026-09-15"
+    },
+    "paired_differences.png": {
+      "axes": [
+        {
+          "title": "",
+          "x": "difference in ROC AUC",
+          "y": "pair compared"
+        },
+        {
+          "title": "",
+          "x": "difference in PR AUC",
+          "y": "pair compared"
+        },
+        {
+          "title": "",
+          "x": "difference in recall, cancer class",
+          "y": "pair compared"
+        }
+      ],
+      "dispersion": "95 % bootstrap interval on the paired difference",
+      "dpi": 200,
+      "n": "n(evaluation images) = 99, n(folds) = 25",
+      "sha256": "e08fc500172274363d775f9021f19b5a55b8faca20ac9afd7cbf9751a94c795f",
+      "source": "scripts/build_figures.py",
+      "style_version": 1,
+      "written": "2026-09-15"
+    },
+    "roc_arms.png": {
+      "axes": [
+        {
+          "title": "",
+          "x": "False positive rate",
+          "y": "True positive rate"
+        }
+      ],
+      "dispersion": null,
+      "dpi": 200,
+      "n": "n(evaluation images) = 99, n(folds) = 25",
+      "sha256": "4b71f9f32ea8e9a04306427881c1b4fe8f6ac7672e2186077bb3a2b4bb9f0698",
+      "source": "scripts/build_figures.py",
+      "style_version": 1,
+      "written": "2026-09-15"
+    }
+  },
+  "schema": "image-manifest/1"
+}

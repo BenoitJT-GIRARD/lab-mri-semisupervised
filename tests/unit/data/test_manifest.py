@@ -50,7 +50,7 @@ def test_different_images_get_different_ids(tmp_path: Path) -> None:
 
 
 def _dataset(tmp_path: Path) -> tuple[Path, Path]:
-    labelled, unlabelled = tmp_path / "avec_labels", tmp_path / "sans_label"
+    labelled, unlabelled = tmp_path / "labelled", tmp_path / "unlabelled"
     _write(labelled / "normal" / "n1.png", 10)
     _write(labelled / "normal" / "n2.png", 20)
     _write(labelled / "cancer" / "c1.png", 30)

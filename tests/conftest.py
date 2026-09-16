@@ -1,12 +1,63 @@
-"""Fixtures shared across the test suite."""
+"""What every tier of this suite shares: where the repository is, and how a test is skipped.
+
+The suite is read by tier — ``unit/``, ``integration/``, ``system/`` — and each tier states
+in its own ``conftest.py`` what it forbids. This file holds only what all three need.
+
+**A skip names the command that would run the test.** A skip whose reason is a condition —
+``"needs the database"``, ``"no model on disk"`` — teaches a reader that the test is
+unrunnable. A skip that says ``run: docker compose up -d postgres`` teaches them how to run
+it. Use :func:`skip_unless` and the message writes itself.
+"""
 
 from __future__ import annotations
 
+import os
+import socket
 from pathlib import Path
 
 import numpy as np
 import pytest
 from PIL import Image
+
+from mri_semisupervised.config import PROJECT_ROOT as ROOT
+
+# The root is NOT recomputed here: the import above takes it from the package, which already
+# decides where the repository is. A second answer to that question is a second answer.
+
+
+def skip_unless(condition: bool, *, command: str) -> pytest.MarkDecorator:
+    """Skip the test unless the condition holds, naming the command that makes it hold.
+
+    @skip_unless(port_is_open(5432), command="docker compose up -d postgres")
+    def test_the_api_writes_its_prediction_to_the_database(): ...
+    """
+    return pytest.mark.skipif(not condition, reason=f"run: {command}")
+
+
+def port_is_open(port: int, host: str = "127.0.0.1", timeout: float = 0.25) -> bool:
+    """Is something listening? Asked once at collection, never retried in a loop."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def env_is_set(name: str) -> bool:
+    """Is this environment variable set to something?
+
+    A test gated on a variable that no workflow and no documented command ever sets skips on
+    every checkout, and the count of tests it belongs to is a count of tests nobody runs.
+    """
+    return bool(os.environ.get(name))
+
+
+@pytest.fixture(scope="session")
+def root() -> Path:
+    """The repository root, for a test that must open a published artefact."""
+    return ROOT
+
+# --- Fixtures of this repository ------------------------------------------
 
 
 def _write_synthetic_image(path: Path, value: int = 128, size: int = 32, tag: int = 0) -> None:
@@ -22,31 +73,37 @@ def _write_synthetic_image(path: Path, value: int = 128, size: int = 32, tag: in
     Image.fromarray(arr).save(path, format="PNG")
 
 
+def write_dataset(
+    root: Path, *, labelled_per_class: int = 4, unlabelled_per_class: int = 3, corrupt: bool = True
+) -> Path:
+    """Write a ``labelled/{cancer,normal}`` + ``unlabelled/`` tree, sized by the caller.
+
+    A unit test wants the smallest tree that exercises a rule; the system tier wants one
+    large enough for a stratified fold and an inner validation split inside it. Same shape,
+    same intensities, one function.
+    """
+    (root / "labelled" / "cancer").mkdir(parents=True)
+    (root / "labelled" / "normal").mkdir(parents=True)
+    (root / "unlabelled").mkdir(parents=True)
+
+    for i in range(labelled_per_class):
+        _write_synthetic_image(root / "labelled" / "cancer" / f"c_{i}.png", value=200, tag=1 + i)
+        _write_synthetic_image(root / "labelled" / "normal" / f"n_{i}.png", value=50, tag=101 + i)
+    for i in range(unlabelled_per_class):
+        _write_synthetic_image(root / "unlabelled" / f"u_cancer_{i}.png", value=190, tag=51 + i)
+        _write_synthetic_image(root / "unlabelled" / f"u_normal_{i}.png", value=60, tag=151 + i)
+
+    if corrupt:
+        # A deliberately corrupt file: the inventory must report it, not die on it.
+        (root / "unlabelled" / "broken.jpg").write_bytes(b"not a jpeg file")
+    return root
+
+
 @pytest.fixture()
 def synthetic_dataset(tmp_path: Path) -> Path:
-    """Build a miniature ``avec_labels/{cancer,normal}`` + ``sans_label/`` tree.
-
-    - 4 cancer images, intensity 200
-    - 4 normal images, intensity 50
-    - 6 unlabelled images: 3 cancer-like, 3 normal-like
-    - 1 corrupt file, so the loader's reporting path is exercised
-    """
+    """The miniature tree: 4 images per labelled class, 3 per unlabelled group, 1 corrupt."""
     root = tmp_path / "mri_dataset_brain_cancer_oc"
-    (root / "avec_labels" / "cancer").mkdir(parents=True)
-    (root / "avec_labels" / "normal").mkdir(parents=True)
-    (root / "sans_label").mkdir(parents=True)
-
-    for i in range(4):
-        _write_synthetic_image(root / "avec_labels" / "cancer" / f"c_{i}.png", value=200, tag=1 + i)
-    for i in range(4):
-        _write_synthetic_image(root / "avec_labels" / "normal" / f"n_{i}.png", value=50, tag=11 + i)
-    for i in range(3):
-        _write_synthetic_image(root / "sans_label" / f"u_cancer_{i}.png", value=190, tag=21 + i)
-    for i in range(3):
-        _write_synthetic_image(root / "sans_label" / f"u_normal_{i}.png", value=60, tag=31 + i)
-
-    # A deliberately corrupt file: the loader must report it, not skip it silently.
-    (root / "sans_label" / "broken.jpg").write_bytes(b"not a jpeg file")
+    write_dataset(root)
 
     return root
 

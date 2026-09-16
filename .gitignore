@@ -51,7 +51,7 @@ coverage.xml
 .nox/
 .hypothesis/
 
-# --- Données & artefacts lourds ---
+# --- Data and heavy artefacts ---
 data/raw/
 data/interim/
 data/processed/*.parquet
@@ -67,12 +67,10 @@ data/processed/*.json
 *.pkl
 *.joblib
 
-# --- Reports: only the generated figures and experiment artefacts are kept ---
-reports/figures/_tmp/
+# --- Reports ---
+# Everything under reports/ is published: the figures, the per-run artefacts and the
+# summaries. Nothing here decides what belongs to it; what a run writes, a reader reads.
 reports/_build/
-reports/*.zip
-# Experiment runs carry raw predictions and per-fold metrics: kept, they are the evidence.
-!reports/experiments/
 
 # --- Logs ---
 *.log
@@ -86,9 +84,6 @@ logs/
 # --- Editor working folders ---
 .idea/
 .vscode/
-
-# --- Source documentation shipped with the brief, never redistributed ---
-infos/
 
 # --- Secrets ---
 secrets.toml

@@ -35,8 +35,12 @@ EXPERIMENTS_DIR: Path = REPORTS_DIR / "experiments"
 DATASET_NAME: str = "mri_dataset_brain_cancer_oc"
 DATASET_ROOT: Path = RAW_DIR / DATASET_NAME
 
-LABELED_DIR: Path = DATASET_ROOT / "avec_labels"
-UNLABELED_DIR: Path = DATASET_ROOT / "sans_label"
+# The archive ships its folders in French — `avec_labels` and `sans_label`. They are renamed
+# on the way in: a reader who cannot read the folder names cannot rebuild the tree, and the
+# dataset fingerprint is taken on the pixels, so no manifest changes. `scripts/check_data.py`
+# names the layout it expects and says what it found.
+LABELLED_DIR: Path = DATASET_ROOT / "labelled"
+UNLABELLED_DIR: Path = DATASET_ROOT / "unlabelled"
 
 MANIFEST_PATH: Path = PROCESSED_DIR / "dataset_manifest.parquet"
 

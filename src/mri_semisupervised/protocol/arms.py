@@ -133,6 +133,10 @@ def _loader(
     dataset = ImagePathsDataset(paths=paths, transform=transform, labels=labels)
     generator = torch.Generator()
     generator.manual_seed(seed)
+    # A training batch of one cannot pass through BatchNorm: the layer has no variance to
+    # normalise with, and torch raises. It happens whenever the fold size leaves a remainder
+    # of one, so the last batch is dropped in that single case and kept in every other.
+    lonely_tail = train and len(dataset) % cfg.batch_size == 1
     return DataLoader(
         dataset,
         batch_size=cfg.batch_size,
@@ -140,6 +144,7 @@ def _loader(
         num_workers=0,
         pin_memory=False,
         generator=generator if train else None,
+        drop_last=lonely_tail,
     )
 
 

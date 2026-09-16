@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from mri_semisupervised.config import CLASS_TO_INDEX, LABELED_DIR, UNLABELED_DIR
+from mri_semisupervised.config import CLASS_TO_INDEX, LABELLED_DIR, UNLABELLED_DIR
 
 VALID_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".bmp"})
 
@@ -49,6 +49,19 @@ def content_id(path: Path) -> str:
     return digest.hexdigest()
 
 
+def readable_content_id(path: Path) -> str | None:
+    """The content identity of an image, or ``None`` when Pillow cannot decode it.
+
+    A file with an image extension that no decoder accepts is a fact about the dataset, and
+    the loader already reports it. The inventory used to raise on the first one instead, so
+    a single unreadable file stopped the build before anything could say which file it was.
+    """
+    try:
+        return content_id(path)
+    except (OSError, ValueError):
+        return None
+
+
 def _iter_images(directory: Path) -> Iterable[Path]:
     if not directory.exists():
         return iter(())
@@ -64,21 +77,23 @@ def build_manifest(
     unlabelled_dir: Path | None = None,
 ) -> pd.DataFrame:
     """Inventory every image with its content identity, its pool and its label."""
-    labelled_dir = labelled_dir or LABELED_DIR
-    unlabelled_dir = unlabelled_dir or UNLABELED_DIR
+    labelled_dir = labelled_dir or LABELLED_DIR
+    unlabelled_dir = unlabelled_dir or UNLABELLED_DIR
 
     rows: list[dict[str, object]] = []
     for pool, directory in ((LABELLED, labelled_dir), (UNLABELLED, unlabelled_dir)):
         for path in _iter_images(directory):
             label = path.parent.name if pool == LABELLED else None
+            image_id = readable_content_id(path)
             rows.append(
                 {
-                    "image_id": content_id(path),
+                    "image_id": image_id,
                     "byte_sha256": byte_id(path),
                     "path": str(path),
                     "pool": pool,
                     "label": label,
                     "label_index": CLASS_TO_INDEX.get(label) if label else None,
+                    "readable": image_id is not None,
                 }
             )
 
@@ -86,8 +101,12 @@ def build_manifest(
     if manifest.empty:
         return manifest
 
+    # An unreadable file has no content identity, so it belongs to no duplicate group: its
+    # size is zero, and `Int64` carries that beside the counts without inventing a number.
     counts = manifest["image_id"].value_counts()
-    manifest["duplicate_group_size"] = manifest["image_id"].map(counts).astype(int)
+    manifest["duplicate_group_size"] = (
+        manifest["image_id"].map(counts).fillna(0).astype("Int64")
+    )
     return manifest.sort_values(["pool", "path"]).reset_index(drop=True)
 
 
@@ -112,6 +131,8 @@ def apply_duplicate_rules(manifest: pd.DataFrame) -> pd.DataFrame:
         return manifest.assign(kept_for_training=pd.Series(dtype=bool), exclusion_reason=None)
 
     labelled = manifest[manifest["pool"] == LABELLED]
+    if "readable" in labelled:
+        labelled = labelled[labelled["readable"].astype(bool)]
     conflicting = labelled.groupby("image_id")["label"].nunique()
     conflicting = conflicting[conflicting > 1]
     if len(conflicting):
@@ -124,6 +145,10 @@ def apply_duplicate_rules(manifest: pd.DataFrame) -> pd.DataFrame:
     ruled = manifest.copy()
     ruled["kept_for_training"] = True
     ruled["exclusion_reason"] = None
+
+    if "readable" in ruled:
+        unreadable = ~ruled["readable"].astype(bool)
+        ruled.loc[unreadable, ["kept_for_training", "exclusion_reason"]] = [False, "unreadable"]
 
     repeated = labelled.duplicated(subset="image_id", keep="first")
     ruled.loc[labelled.index[repeated], ["kept_for_training", "exclusion_reason"]] = [
@@ -146,8 +171,12 @@ def apply_duplicate_rules(manifest: pd.DataFrame) -> pd.DataFrame:
 
 
 def dataset_fingerprint(manifest: pd.DataFrame) -> str:
-    """One hash standing for the whole dataset, so a report names its data."""
-    ordered = sorted(manifest["image_id"].tolist())
+    """One hash standing for the whole dataset, so a report names its data.
+
+    A file the decoder refused has no content identity, and it does not enter: the
+    fingerprint stands for the images, and an unreadable file is not one.
+    """
+    ordered = sorted(image_id for image_id in manifest["image_id"] if isinstance(image_id, str))
     digest = hashlib.sha256()
     for image_id in ordered:
         digest.update(image_id.encode())
@@ -164,6 +193,7 @@ def summarise(manifest: pd.DataFrame) -> dict[str, object]:
 
     return {
         "files": len(ruled),
+        "unreadable_files": int((ruled["exclusion_reason"] == "unreadable").sum()),
         "distinct_images": int(ruled["image_id"].nunique()),
         "labelled_files": len(labelled),
         "evaluation_images": int(labelled["image_id"].nunique()),

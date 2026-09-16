@@ -87,10 +87,10 @@ folder name, had nothing to catch them with.
 Here an image is what it contains.
 """),
         code("""
-from mri_semisupervised.config import LABELED_DIR, UNLABELED_DIR
+from mri_semisupervised.config import LABELLED_DIR, UNLABELLED_DIR
 from mri_semisupervised.data.manifest import apply_duplicate_rules, build_manifest, summarise
 
-manifest = apply_duplicate_rules(build_manifest(LABELED_DIR, UNLABELED_DIR))
+manifest = apply_duplicate_rules(build_manifest(LABELLED_DIR, UNLABELLED_DIR))
 facts = summarise(manifest)
 for key, value in facts.items():
     print(f"{key:34} {value}")

@@ -16,13 +16,18 @@ dependencies = [
     "scikit-learn>=1.5",
     "matplotlib>=3.9",
     "seaborn>=0.13",
-    "umap-learn>=0.5.6",
     "tqdm>=4.66",
     "torch>=2.3",
     "torchvision>=0.18",
 ]
 
 [project.optional-dependencies]
+# UMAP is one of the two projections `viz.plots.project_2d` offers, and the notebooks use
+# t-SNE. Kept out of the runtime dependencies: it drags numba, llvmlite and pynndescent into
+# every install for a branch nothing here takes.
+umap = [
+    "umap-learn>=0.5.6",
+]
 dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",
@@ -76,7 +81,9 @@ torchvision = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["data", "reports", "infos", "notebooks/.ipynb_checkpoints"]
+# Anchored at the root: `"data"` alone also excluded `src/mri_semisupervised/data/`, so four
+# source modules — the loader and the inventory among them — were never linted.
+extend-exclude = ["/data", "/reports", "notebooks/.ipynb_checkpoints"]
 
 [tool.ruff.lint]
 select = [
@@ -96,9 +103,6 @@ ignore = [
     "PLR0915",  # too many statements — pipeline functions can be long
     "PLR0912",  # too many branches — clustering selection has many cases
     "E501",     # long lines (handled by formatter when possible)
-    "RUF001",   # ambiguous-unicode-character — French text uses these intentionally
-    "RUF002",   # ambiguous unicode in docstrings — same reason
-    "RUF003",   # ambiguous unicode in comments — same reason
     "PLC0415",  # imports inside functions — used for optional torch / lazy umap
     "PLW2901",  # redefined-loop-name — common PyTorch pattern (batch = batch.to(dev))
 ]
@@ -114,27 +118,44 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra --strict-markers --strict-config"
 testpaths = ["tests"]
-# Warnings are errors (ADR 0028). Two blanket `ignore::` lines used to hide every
-# DeprecationWarning and FutureWarning, ours included. The suite passes with no exemption
-# at all: nothing this code or its dependencies emit needed silencing, which is the answer
-# a blanket ignore made impossible to see.
+addopts = "-ra --strict-markers --strict-config --cov --cov-branch --cov-report=term-missing --cov-report=xml"
+markers = [
+    "integration: two real components of the repository wired together, or one against a real external dependency",
+    "system: the product started the way the README says to start it, questioned through its public surface",
+    "claim: fails when a published number, figure, table or artefact stops matching the code",
+    "simulation: replays a complete scenario on frozen data, with no real service",
+    "slow: takes long enough that a reader deserves to be told before running it",
+]
+# Warnings are errors (ADR 0028).
 filterwarnings = ["error"]
 
 [tool.coverage.run]
-source = ["src/mri_semisupervised"]
+source = ["src/mri_semisupervised", "scripts"]
 branch = true
+data_file = "var/.coverage"
+# Vendored copies of portfolio tooling, identical in every repository and tested where they
+# are written: counting them here would measure someone else's tests.
+omit = ["*/figure_style.py", "scripts/run_notebooks.py"]
 
 [tool.coverage.report]
+# The floor is the rate measured the day the three tiers were completed, rounded down. A
+# floor below the current rate lets the next commit lose coverage in silence.
+fail_under = 10
 show_missing = true
-skip_covered = false
+skip_covered = true
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
 ]
 
+[tool.coverage.xml]
+output = "reports/coverage/coverage.xml"
+
+[tool.coverage.html]
+directory = "var/coverage-html"
+
 [tool.bandit]
-exclude_dirs = ["tests", "data", "infos", "reports", ".venv"]
+exclude_dirs = ["./tests", "./data", "./reports", "./.venv"]
 skips = ["B101"]  # assert_used — pytest convention

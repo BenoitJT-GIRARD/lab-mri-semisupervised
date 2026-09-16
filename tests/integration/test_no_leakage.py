@@ -23,6 +23,10 @@ from mri_semisupervised.protocol import experiment as experiment_module
 from mri_semisupervised.protocol.arms import ArmResult
 from mri_semisupervised.protocol.experiment import CORRECTED, LEGACY, run_experiment
 
+#: Integration tier: these run the protocol's own machinery over a synthetic dataset,
+#: which is what makes them able to catch a leak the unit tests cannot see.
+pytestmark = pytest.mark.integration
+
 N_LABELLED = 40
 N_UNLABELLED = 60
 N_LEAKED = 8  # labelled images whose copy also sits in the unlabelled pool

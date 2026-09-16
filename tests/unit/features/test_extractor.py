@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import numpy as np
 import pytest
-
-if importlib.util.find_spec("torch") is None:  # pragma: no cover
-    pytest.skip("torch indisponible", allow_module_level=True)
 
 from mri_semisupervised.config import FeatureConfig
 from mri_semisupervised.data.loader import discover_images

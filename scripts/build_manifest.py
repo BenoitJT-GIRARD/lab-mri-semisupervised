@@ -7,26 +7,21 @@ Usage:
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-
-from mri_semisupervised.config import LABELED_DIR, MANIFEST_PATH, UNLABELED_DIR, ensure_dirs
+from mri_semisupervised.config import LABELLED_DIR, MANIFEST_PATH, UNLABELLED_DIR, ensure_dirs
 from mri_semisupervised.data.manifest import apply_duplicate_rules, build_manifest, summarise
 
 
 def main() -> None:
     """Build the manifest, apply the duplicate rules, and print the summary."""
     ensure_dirs()
-    if not LABELED_DIR.exists():
-        print(f"[warn] dataset not found under {LABELED_DIR.parent}.")
+    if not LABELLED_DIR.exists():
+        print(f"[warn] dataset not found under {LABELLED_DIR.parent}.")
         print("       point MRI_DATA_DIR at the folder that holds the dataset.")
         return
 
-    print(f"[info] scanning {LABELED_DIR.parent}")
-    manifest = apply_duplicate_rules(build_manifest(LABELED_DIR, UNLABELED_DIR))
+    print(f"[info] scanning {LABELLED_DIR.parent}")
+    manifest = apply_duplicate_rules(build_manifest(LABELLED_DIR, UNLABELLED_DIR))
     manifest.to_parquet(MANIFEST_PATH, index=False)
 
     facts = summarise(manifest)

@@ -8,11 +8,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
 from mri_semisupervised.config import FeatureConfig, ensure_dirs, set_global_seeds
 from mri_semisupervised.data.loader import discover_images

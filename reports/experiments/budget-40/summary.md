@@ -2,6 +2,11 @@
 
 Protocol: **corrected**
 
+- dataset fingerprint: `8f22a69ffa46ca1f`
+- evaluation images: 99
+- folds: 25 (5 splits x 5 repeats)
+- unlabelled pool: 1311
+
 ## Per-arm means across folds
 
 | arm | roc_auc | pr_auc | recall_positive | f1_macro | accuracy |

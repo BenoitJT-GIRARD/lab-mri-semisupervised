@@ -1,4 +1,12 @@
-"""Plotting helpers: image grids, 2D projections, ROC curves, confusion matrices."""
+"""Plotting helpers: image grids, 2D projections, ROC curves.
+
+Each function returns its figure and writes nothing. Writing an image is the business of
+`figure_style.save_figure`, which stamps the sample size, names the dispersion and records
+what it wrote; a second writer beside it would produce figures no manifest knows about.
+
+Colours come from the same module, by role: a label keeps its colour from one figure to the
+next, and the unlabelled pool is grey wherever it appears.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +21,8 @@ from PIL import Image, ImageOps
 from sklearn.manifold import TSNE
 from sklearn.metrics import roc_auc_score, roc_curve
 
+from mri_semisupervised.figure_style import PALETTE, apply_style, reference_line, series_colours
+
 try:
     import umap
 
@@ -20,7 +30,9 @@ try:
 except ImportError:  # pragma: no cover
     HAS_UMAP = False
 
-sns.set_theme(context="notebook", style="whitegrid")
+# The shared style, installed once at import: seaborn's own theme would override the
+# portfolio palette in whichever module happened to be imported last.
+apply_style()
 
 
 def plot_image_grid(
@@ -30,7 +42,6 @@ def plot_image_grid(
     cols: int = 5,
     figsize_per_cell: tuple[float, float] = (2.4, 2.4),
     cmap: str = "gray",
-    save_path: Path | None = None,
 ) -> plt.Figure:
     """Draw a grid of images and return the figure."""
     paths_list = [Path(p) for p in paths]
@@ -51,34 +62,26 @@ def plot_image_grid(
                 ax.imshow(np.asarray(img.convert("L")), cmap=cmap)
             ax.set_title(titles_list[i], fontsize=9)
     fig.tight_layout()
-    if save_path is not None:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path, dpi=140, bbox_inches="tight")
     return fig
 
 
 def plot_pixel_stats(
     stats: pd.DataFrame,
-    save_path: Path | None = None,
 ) -> plt.Figure:
     """Histograms of the per-image pixel statistics."""
     fig, axes = plt.subplots(1, 2, figsize=(11, 4))
-    sns.histplot(stats["mean"], bins=30, ax=axes[0], color="#3182bd")
+    sns.histplot(stats["mean"], bins=30, ax=axes[0], color=PALETTE["primary"])
     axes[0].set_title("Distribution of the mean luminance")
     axes[0].set_xlabel("mean intensity (0-1)")
-    sns.histplot(stats["std"], bins=30, ax=axes[1], color="#fd8d3c")
+    sns.histplot(stats["std"], bins=30, ax=axes[1], color=PALETTE["secondary"])
     axes[1].set_title("Distribution of the per-image pixel standard deviation")
     axes[1].set_xlabel("standard deviation")
     fig.tight_layout()
-    if save_path is not None:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path, dpi=140, bbox_inches="tight")
     return fig
 
 
 def plot_equalization(
     image_path: str | Path,
-    save_path: Path | None = None,
 ) -> plt.Figure:
     """Show one MRI before and after histogram equalisation.
 
@@ -96,16 +99,13 @@ def plot_equalization(
     axes[0][1].imshow(equalized, cmap="gray")
     axes[0][1].set_title("after equalisation")
     axes[0][1].axis("off")
-    axes[1][0].hist(original.ravel(), bins=256, range=(0, 255), color="#3182bd")
+    axes[1][0].hist(original.ravel(), bins=256, range=(0, 255), color=PALETTE["primary"])
     axes[1][0].set_title("Histogramme d'origine")
     axes[1][0].set_xlabel("intensity")
-    axes[1][1].hist(equalized.ravel(), bins=256, range=(0, 255), color="#fd8d3c")
+    axes[1][1].hist(equalized.ravel(), bins=256, range=(0, 255), color=PALETTE["secondary"])
     axes[1][1].set_title("equalised histogram")
     axes[1][1].set_xlabel("intensity")
     fig.tight_layout()
-    if save_path is not None:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path, dpi=140, bbox_inches="tight")
     return fig
 
 
@@ -157,7 +157,6 @@ def plot_2d_scatter(
     coords: np.ndarray,
     labels: Iterable[str | int | None],
     title: str,
-    save_path: Path | None = None,
 ) -> plt.Figure:
     """A 2D scatter coloured by label.
 
@@ -168,12 +167,14 @@ def plot_2d_scatter(
     df = pd.DataFrame({"x": coords[:, 0], "y": coords[:, 1], "label": cleaned})
 
     reference = {
-        "unlabeled": "#bdbdbd",
-        "normal": "#2ca25f",
-        "cancer": "#de2d26",
-        "noise": "#444444",
-        "0": "#1f77b4",
-        "1": "#d62728",
+        # By role, and stable across figures: the two classes take series colours, and
+        # everything that carries no label is grey.
+        **series_colours(
+            ["cancer", "normal", "0", "1"],
+            control=[],
+        ),
+        "unlabeled": PALETTE["control"],
+        "noise": PALETTE["muted"],
     }
     palette = {k: reference[k] for k in df["label"].unique() if k in reference}
     if not palette:
@@ -196,37 +197,39 @@ def plot_2d_scatter(
     ax.set_ylabel("dim 2")
     ax.legend(loc="best", frameon=True)
     fig.tight_layout()
-    if save_path is not None:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path, dpi=140, bbox_inches="tight")
     return fig
 
 
 def plot_roc_compare(
     curves: dict[str, tuple[np.ndarray, np.ndarray]],
-    title: str = "Courbes ROC — comparaison",
-    save_path: Path | None = None,
+    title: str = "ROC curves, pooled out of fold",
+    colours: dict[str, str] | None = None,
 ) -> plt.Figure:
     """Overlay several binary ROC curves on one axis.
 
     ``curves`` maps an arm name to ``(y_true, y_score)``, where ``y_score`` is the
     probability of the positive class. The AUC goes in the legend, because a curve without
     its number invites the reader to guess.
+
+    ``colours`` maps an arm to its colour. Without it matplotlib assigns by draw order, and
+    in this repository that put `supervised` in red on one figure and in blue on the next,
+    swapping it with its own control — the one confusion this project cannot afford.
     """
     fig, ax = plt.subplots(figsize=(5.5, 4.6))
     for name, (y_true, y_score) in curves.items():
         fpr, tpr, _ = roc_curve(y_true, y_score)
         auc = roc_auc_score(y_true, y_score)
-        ax.plot(fpr, tpr, linewidth=1.8, label=f"{name} (AUC = {auc:.3f})")
-    ax.plot([0, 1], [0, 1], "k--", linewidth=0.8, label="hasard")
-    ax.set_xlabel("Taux de faux positifs")
-    ax.set_ylabel("Taux de vrais positifs")
+        ax.plot(
+            fpr, tpr, linewidth=1.8,
+            label=f"{name} (AUC = {auc:.3f})",
+            color=(colours or {}).get(name),
+        )
+    reference_line(ax, diagonal=True, label="chance")
+    ax.set_xlabel("False positive rate")
+    ax.set_ylabel("True positive rate")
     ax.set_title(title)
     ax.legend(loc="lower right", frameon=True)
     fig.tight_layout()
-    if save_path is not None:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path, dpi=140, bbox_inches="tight")
     return fig
 
 

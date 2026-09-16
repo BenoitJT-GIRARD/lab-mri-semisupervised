@@ -20,8 +20,8 @@ from PIL import Image, ImageFile, UnidentifiedImageError
 from mri_semisupervised.config import (
     CLASS_TO_INDEX,
     DATASET_ROOT,
-    LABELED_DIR,
-    UNLABELED_DIR,
+    LABELLED_DIR,
+    UNLABELLED_DIR,
 )
 from mri_semisupervised.data.manifest import content_id
 
@@ -81,9 +81,9 @@ def discover_images(
     records: list[ImageRecord] = []
     corrupted: list[Path] = []
 
-    labeled_root = dataset_root / "avec_labels"
-    if labeled_root.exists():
-        for class_dir in sorted(p for p in labeled_root.iterdir() if p.is_dir()):
+    labelled_root = dataset_root / LABELLED_DIR.name
+    if labelled_root.exists():
+        for class_dir in sorted(p for p in labelled_root.iterdir() if p.is_dir()):
             class_name = class_dir.name.lower()
             label_idx = CLASS_TO_INDEX.get(class_name)
             for path in _iter_image_paths(class_dir):
@@ -106,9 +106,9 @@ def discover_images(
                     )
                 )
 
-    unlabeled_root = dataset_root / "sans_label"
-    if unlabeled_root.exists():
-        for path in _iter_image_paths(unlabeled_root):
+    unlabelled_root = dataset_root / UNLABELLED_DIR.name
+    if unlabelled_root.exists():
+        for path in _iter_image_paths(unlabelled_root):
             meta = _read_image_meta(path)
             if meta is None:
                 corrupted.append(path)
@@ -221,8 +221,8 @@ def summarise_dataset(records: list[ImageRecord]) -> dict[str, object]:
 
 
 __all__ = [
-    "LABELED_DIR",
-    "UNLABELED_DIR",
+    "LABELLED_DIR",
+    "UNLABELLED_DIR",
     "VALID_EXTENSIONS",
     "ImageRecord",
     "compute_pixel_stats",
