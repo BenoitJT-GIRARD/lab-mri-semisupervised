@@ -1,12 +1,12 @@
-"""Generate the two notebooks programmatically.
+"""Generate the five notebooks programmatically, one per question.
 
-Why build the ``.ipynb`` rather than write them by hand:
+Why the ``.ipynb`` files are built and not hand-written:
 
 * the source of every cell lives in the repository, versioned, readable and diffable;
 * the imports and the sections cannot drift away from the ``mri_semisupervised`` package,
   because they are written against it here;
 * ``uv run python -m nbconvert --execute`` replays them with no manual step, so the stored
-  outputs are always a capture of a real run rather than an edited one.
+  outputs are always the capture of one real run.
 
 Usage:
     uv run python scripts/build_notebooks.py
@@ -33,6 +33,26 @@ pd.set_option("display.width", 120)
 pd.set_option("display.max_columns", 20)
 """
 
+#: What a notebook that reads a finished run needs before its first table. The runs are read
+#: from `reports/experiments/`, never recomputed: an evening of GPU does not belong in a cell.
+RESULTS_PREAMBLE = """
+import numpy as np
+import pandas as pd
+
+from mri_semisupervised.config import EXPERIMENTS_DIR
+from mri_semisupervised.protocol.uncertainty import paired_difference
+
+pd.set_option("display.width", 120)
+pd.set_option("display.max_columns", 20)
+
+per_fold = pd.read_parquet(EXPERIMENTS_DIR / "corrected" / "per_fold.parquet")
+predictions = pd.read_parquet(EXPERIMENTS_DIR / "corrected" / "predictions.parquet")
+folds = pd.read_parquet(EXPERIMENTS_DIR / "corrected" / "folds.parquet")
+
+#: The five metrics every table of these notebooks reports, in one order.
+headline = ["roc_auc", "pr_auc", "recall_positive", "f1_macro", "accuracy"]
+"""
+
 
 def md(source: str) -> nbf.NotebookNode:
     return nbf.v4.new_markdown_cell(source.strip("\n"))
@@ -40,6 +60,17 @@ def md(source: str) -> nbf.NotebookNode:
 
 def code(source: str) -> nbf.NotebookNode:
     return nbf.v4.new_code_cell(source.strip("\n"))
+
+
+def cut(cells: list[nbf.NotebookNode], before: str) -> tuple[list, list]:
+    """Split a list of cells at the section that opens with `before`.
+
+    The five notebooks are five questions, and the prose that answers each of them was
+    written as one run of sections. Cutting here keeps that prose where it is instead of
+    copying it into five files that would drift apart.
+    """
+    index = next(i for i, cell in enumerate(cells) if cell.source.lstrip().startswith(before))
+    return cells[:index], cells[index:]
 
 
 def write_notebook(path: Path, cells: list[nbf.NotebookNode]) -> None:
@@ -133,14 +164,19 @@ leaked.drop_duplicates("image_id")["label"].value_counts().rename("images").to_f
 manifest["exclusion_reason"].fillna("kept").value_counts().rename("files").to_frame()
 """),
         md("""
-## 3. What the images look like
+## 3. What the pixels look like, without showing them
 
-Everything is 512x512 RGB. The two classes differ in intensity distribution, which is worth
-knowing before reading anything into a clustering that separates them.
+Everything is 512x512 RGB. The two classes differ in their intensity distribution, which is
+worth knowing before reading anything into a clustering that separates them.
+
+**No scan appears in this notebook, and none can.** The archive allows academic use and not
+redistribution, so what is plotted here is derived: the mean and the spread of each image,
+never the image. `plot_image_grid` and `plot_equalization` exist in `viz/plots.py` for
+looking at the data on a machine that holds it; their output is not committed anywhere.
 """),
         code("""
 from mri_semisupervised.data.loader import compute_pixel_stats, discover_images
-from mri_semisupervised.viz.plots import plot_image_grid, plot_pixel_stats
+from mri_semisupervised.viz.plots import plot_pixel_stats
 
 records, corrupted = discover_images()
 print(f"{len(records)} readable files, {len(corrupted)} unreadable")
@@ -149,24 +185,19 @@ stats = compute_pixel_stats(records, sample_size=300, seed=0)
 plot_pixel_stats(stats)
 """),
         code("""
-labelled = manifest[(manifest["pool"] == "labelled") & manifest["kept_for_training"]]
-sample = labelled.groupby("label").head(4)
-plot_image_grid(sample["path"].tolist(), titles=sample["label"].tolist(), cols=4)
+by_class = stats.merge(
+    manifest[["image_id", "label"]].drop_duplicates("image_id"), on="image_id", how="left"
+)
+by_class["label"] = by_class["label"].fillna("unlabelled")
+by_class.groupby("label")[["mean", "std"]].describe().round(1).T
 """),
         md("""
-### Histogram equalisation
-
-Stretching the intensities makes structure easier to see. It is used here for looking, not
-for the features: the backbone was trained under ImageNet normalisation, and feeding it
-something else would trade a small visual gain for a distribution shift.
-"""),
-        code("""
-from mri_semisupervised.viz.plots import plot_equalization
-
-plot_equalization(sample["path"].iloc[0])
+The labelled classes sit a few grey levels apart on the mean, and the unlabelled pool covers
+both. That gap is small, and notebook 04 shows what happens to the clustering when histogram
+equalisation removes it.
 """),
         md("""
-## 4. Clustering the embeddings
+## 1. Clustering the embeddings
 
 Five algorithms on the ResNet50 embeddings, compared on internal metrics and on the ARI
 against the labels.
@@ -216,7 +247,7 @@ of outliers.
 An internal metric measures whether a partition is *neat*. It cannot tell you whether it is
 *the one you wanted*. That is the whole reason the ARI is in the table.
 
-DBSCAN, at this eps, declares nearly everything noise. Reported rather than tuned away: a
+DBSCAN, at this eps, declares nearly everything noise. The number is reported as it came: a
 method that refuses to split is information about the embedding space.
 """),
         code("""
@@ -230,13 +261,13 @@ labels = index_df["label_name"].fillna("unlabeled").tolist()
 plot_2d_scatter(coords, labels, title="t-SNE of the ResNet50 embeddings, coloured by label")
 """),
         md("""
-## 5. Where this leaves the pseudo-labels
+## 2. Where this leaves the pseudo-labels
 
 The best clustering reaches an ARI around 0.6 against the true labels. That is substantial
 and far from decisive: the pseudo-labels it produces will be right often enough to be worth
-trying, and wrong often enough that the trying has to be measured rather than assumed.
+trying, and wrong often enough that the trying has to be measured.
 
-Notebook 02 measures it — under a protocol where the test fold takes part in no decision,
+Notebook 03 measures it, under a protocol where the test fold takes part in no decision
 and against a control that receives the same images with their pseudo-labels shuffled.
 """),
     ]
@@ -263,7 +294,6 @@ And a confound: the semi-supervised arm took strictly more gradient steps than i
 This notebook reads the artefacts of the corrected protocol. It is not there to defend a
 conclusion — it is there to report one.
 """),
-        code(PREAMBLE),
         md("""
 ## 1. What the corrected protocol does differently
 
@@ -281,7 +311,7 @@ conclusion — it is there to report one.
 
 * The checkpoint and the decision threshold come from an inner validation split carved out
   of the training fold.
-* Five repeats of a five-fold cross-validation, so the spread is measured rather than
+* Five repeats of a five-fold cross-validation, so the spread is measured and not
   guessed.
 
 The control is the arm that can end the discussion. It sees the same images and takes the
@@ -290,8 +320,6 @@ Every pre-training arm here has one.
 """),
         code("""
 import json
-
-from mri_semisupervised.config import EXPERIMENTS_DIR
 
 corrected = EXPERIMENTS_DIR / "corrected"
 print(f"reading {corrected.name}")
@@ -303,9 +331,6 @@ print(f"unlabelled pool     : {meta['unlabelled_pool']}")
 print(f"folds               : {meta['protocol']['n_splits']} x {meta['protocol']['n_repeats']} repeats")
 print(f"gpu                 : {meta['versions']['gpu']}")
 
-per_fold = pd.read_parquet(corrected / "per_fold.parquet")
-predictions = pd.read_parquet(corrected / "predictions.parquet")
-folds = pd.read_parquet(corrected / "folds.parquet")
 """),
         md("""
 ## 2. The arms, side by side
@@ -318,7 +343,6 @@ The original comparison reported only the second kind, which is how a model whos
 had got *worse* came to look better.
 """),
         code("""
-headline = ["roc_auc", "pr_auc", "recall_positive", "f1_macro", "accuracy"]
 per_fold.groupby("arm")[headline].agg(["mean", "std"]).round(3)
 """),
         md("""
@@ -328,8 +352,6 @@ The arms share their folds, so the comparison is paired. Treating the two as ind
 samples would throw the pairing away and widen every interval for nothing.
 """),
         code("""
-from mri_semisupervised.protocol.uncertainty import paired_difference
-
 pivot = per_fold.pivot(index="fold", columns="arm")
 rows = []
 for metric in ["roc_auc", "pr_auc", "recall_positive"]:
@@ -350,7 +372,7 @@ those labels shuffled — and whatever the first version measured was budget and
 the information the clustering had found.
 """),
         md("""
-## 3bis. Where the experiment could see anything at all
+## 1. Where the experiment could see anything at all
 
 A null result is only worth reading if the experiment could have shown a gain. The
 supervised baseline reaches 0.966 with eight folds out of twenty-five already at 1.000, so
@@ -383,12 +405,12 @@ everywhere — so the pre-training phase costs something on its own, and real ps
 recover part of that cost without ever turning it into a gain.
 """),
         md("""
-## 3ter. Two hypotheses about why, each with its own control
+## 2. Two hypotheses about why, each with its own control
 
-Two explanations for the null result are worth testing rather than asserting. Maybe the
+Two explanations for the null result are worth testing. Maybe the
 pre-training is simply **forgotten** — 246 steps, then a fine-tuning that converges in two
 to four epochs. Maybe the labels come from the **wrong source** — a k-means on ImageNet
-embeddings rather than the decision function being optimised.
+embeddings, and not from the decision function being optimised.
 
 `semi_supervised_joint` keeps the pseudo-label loss present at every step;
 `self_training` builds its labels from its own first pass. Each is read against its own
@@ -418,11 +440,11 @@ if stage_b.exists():
         md("""
 Joint training beats its control significantly and still loses to the baseline. Both facts
 are needed: the control sits at 0.922 because training on shuffled labels at every step is
-harmful, so the win against it measures that harm rather than a gain. A significant p-value
+harmful, so the win against it measures that harm, and not a gain. A significant p-value
 against the correct control can still mean the opposite of what it looks like.
 """),
         md("""
-## 3quater. What a returned probability is worth
+## 1. What a returned probability is worth
 
 The protocol publishes scores. Whether they mean anything as probabilities is a separate
 question, and ROC AUC cannot answer it: a model whose ranking is perfect and whose scale is
@@ -469,11 +491,11 @@ print(f"ARI on the training labels: {folds['pseudo_ari_on_train'].mean():.3f} "
 print(f"pseudo-labels per fold    : {folds['n_pseudo'].mean():.0f}")
 """),
         md("""
-## 5. What the leaks were worth
+## 2. What the leaks were worth
 
 The `legacy` run reproduces the original protocol faithfully — duplicates left in place,
 method and alignment decided once over every label, checkpoint taken on training accuracy.
-It exists so the difference is **measured** rather than quoted from an old file.
+It exists so the difference is **measured** here, and not quoted from an old file.
 """),
         code("""
 legacy_dir = EXPERIMENTS_DIR / "legacy"
@@ -491,13 +513,13 @@ else:
     print("no legacy run found: uv run python scripts/run_experiment.py --mode legacy")
 """),
         md("""
-## 6. What to take away
+## 3. What to take away
 
 Whatever the numbers above say, the method is the point:
 
 * an identity that comes from the data, so a duplicate cannot hide behind a folder;
 * every decision that reads a label made inside the training fold;
-* a control arm that makes "it helped" a falsifiable claim rather than a hopeful one;
+* a control arm that makes "it helped" a falsifiable claim;
 * intervals, because with twenty images per fold a difference of one image moves recall by
   0.05.
 
@@ -507,8 +529,75 @@ A protocol that can only confirm what you hoped is not a protocol.
 
 
 def main() -> None:
-    write_notebook(NOTEBOOKS_DIR / "01_dataset_and_clustering.ipynb", build_dataset_notebook())
-    write_notebook(NOTEBOOKS_DIR / "02_protocol_and_results.ipynb", build_protocol_notebook())
+    dataset, clustering = cut(build_dataset_notebook(), "## 1. Clustering the embeddings")
+    protocol, rest = cut(build_protocol_notebook(), "## 1. Where the experiment could see")
+    efficiency, calibration = cut(rest, "## 1. What a returned probability is worth")
+
+    write_notebook(NOTEBOOKS_DIR / "01_dataset.ipynb", dataset)
+    write_notebook(
+        NOTEBOOKS_DIR / "02_embeddings_and_clustering.ipynb",
+        [
+            md("""
+# 02 — What the embeddings hold, and what a clustering can find in them
+
+Notebook 01 established what the 1 506 files are. This one asks whether their ResNet50
+embeddings carry the diagnosis at all: five clustering algorithms, the agreement of each one
+with the labels, and the projection that shows what the space looks like.
+
+Nothing here decides anything. Choosing a method on all the labels is exactly the mistake the
+protocol was rebuilt to prevent, and notebook 03 shows how the choice is made inside a fold.
+"""),
+            code(PREAMBLE),
+            *clustering,
+        ],
+    )
+    write_notebook(
+        NOTEBOOKS_DIR / "03_protocol_and_arms.ipynb",
+        [
+            md("""
+# 03 — The protocol, and what the arms say under it
+
+The comparison itself: what the corrected protocol changes, the eight arms side by side, the
+paired differences across shared folds, and which clustering method each fold chose on its
+own data.
+
+Every table below reads a finished run from `reports/experiments/`. None of them trains
+anything: a run is an evening of GPU, and a notebook that retrained would publish numbers
+nobody could check against the manifests.
+"""),
+            code(RESULTS_PREAMBLE),
+            *protocol,
+        ],
+    )
+    write_notebook(
+        NOTEBOOKS_DIR / "04_label_efficiency_and_mechanisms.ipynb",
+        [
+            md("""
+# 04 — Where a gain could have shown, and why none did
+
+Two questions that a single budget cannot answer. Could the experiment have seen a gain at
+all, given how little headroom the task leaves? And if the pseudo-labels carry information,
+what happens to it between the pre-training and the fine-tuning?
+
+Each mechanism is read against its own control, never against the plain baseline.
+"""),
+            code(RESULTS_PREAMBLE),
+            *efficiency,
+        ],
+    )
+    write_notebook(
+        NOTEBOOKS_DIR / "05_calibration_errors_and_leaks.ipynb",
+        [
+            md("""
+# 05 — What a returned probability is worth, and what the leaks cost
+
+Ranking is not everything. This notebook reads the probability scale the model returns, the
+images it misses, and the price of the three leaks the first version of the protocol carried.
+"""),
+            code(RESULTS_PREAMBLE),
+            *calibration,
+        ],
+    )
 
 
 if __name__ == "__main__":

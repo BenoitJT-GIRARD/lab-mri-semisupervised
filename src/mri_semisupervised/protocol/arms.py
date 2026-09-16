@@ -46,14 +46,14 @@ SUPERVISED = "supervised"
 SEMI_SUPERVISED = "semi_supervised"
 SEMI_SUPERVISED_CONFIDENT = "semi_supervised_confident"
 PERMUTED_CONTROL = "permuted_control"
-#: Pseudo-labels carried through fine-tuning instead of being left behind by it. The
+#: Pseudo-labels carried through fine-tuning, which the phased arms leave behind. The
 #: sequential arms pre-train for 246 steps and then converge in two to four epochs, so
 #: whatever the pre-training taught has every opportunity to be forgotten. These two put
 #: the pseudo-label loss beside the supervised one at every step, and the second is the
 #: control that tells information apart from extra gradient work.
 SEMI_SUPERVISED_JOINT = "semi_supervised_joint"
 JOINT_PERMUTED_CONTROL = "joint_permuted_control"
-#: Pseudo-labels taken from the decision function being optimised rather than from a
+#: Pseudo-labels taken from the decision function being optimised, and not from a
 #: k-means on ImageNet embeddings. The clustering reaches an ARI of 0.46 against the
 #: training labels, so its clusters and the classes only half agree; a first supervised
 #: pass has at least been asked the right question.
@@ -83,7 +83,7 @@ PRETRAINING_ARMS = (
 #: Arms that build their own pseudo-labels from a first supervised pass. They need the
 #: pool's image ids, which they take from ``pseudo``, and none of its labels.
 SELF_TRAINING_ARMS = (SELF_TRAINING, SELF_TRAINING_CONTROL)
-#: Arms that train on both losses at once rather than in two phases.
+#: Arms that train on both losses at once, in one phase.
 JOINT_ARMS = (SEMI_SUPERVISED_JOINT, JOINT_PERMUTED_CONTROL)
 #: Opt-in via ``--arms``: they answer a separate question and cost a run of their own.
 OPTIONAL_ARMS = JOINT_ARMS + SELF_TRAINING_ARMS
@@ -179,7 +179,7 @@ def _predict(model, loader, dev) -> tuple[np.ndarray, np.ndarray]:
 def _validation_score(y_true: np.ndarray, y_score: np.ndarray) -> float:
     """Rank the epochs on the inner validation.
 
-    ROC AUC rather than accuracy: on sixteen validation images, accuracy moves in steps of
+    ROC AUC, and not accuracy: on sixteen validation images, accuracy moves in steps of
     0.0625 and ties constantly, which turns model selection into a coin toss.
     """
     from sklearn.metrics import roc_auc_score
@@ -266,7 +266,7 @@ def _train_epoch_joint(
     train mode, so BatchNorm updates its running statistics on the unlabelled pool even
     when ``weight`` is zero. That is unsupervised adaptation to the target distribution,
     arguably a form of semi-supervision in itself, and it means this arm carries two
-    treatments rather than one. It is why the joint arm is only ever compared to the joint
+    treatments at once. It is why the joint arm is only ever compared to the joint
     control, which pushes exactly the same images through exactly the same BatchNorm: the
     difference between them is the label information and nothing else.
     """
@@ -425,7 +425,7 @@ def run_arm(
     if arm in SELF_TRAINING_ARMS:
         # A first supervised pass, then its own confident predictions on the pool as
         # pseudo-labels, then a pre-training on those. The labels come from the decision
-        # function actually being optimised instead of from a k-means on embeddings whose
+        # function actually being optimised, where the other arms read a k-means on
         # dominant structure turned out to be acquisition contrast.
         scout = fresh_model()
         _finetune(scout, train_loader, val_loader, cfg, dev, history=history, phase="scout")
@@ -498,7 +498,7 @@ def run_arm(
                 pretrain_ids = tuple(subset.image_ids.tolist())
             elif best_state is None:
                 # Every candidate so far scored nan — a single-class validation split. Keep
-                # the first one rather than returning an untrained model.
+                # the first one, so that no untrained model is ever returned.
                 best_state = copy.deepcopy(trial.state_dict())
                 quantile, n_pseudo_used = float(candidate), len(subset)
                 pretrain_steps, history = steps, trial_history

@@ -1,6 +1,6 @@
 """Run the whole comparison, and leave behind enough to check it.
 
-Two modes, and the second one exists so that the before/after is **measured** rather than
+Two modes, and the second one exists so that the before/after is **measured** and not
 quoted from an old JSON file:
 
 * ``corrected`` — the protocol this package now defends. Duplicates removed by content,
@@ -220,7 +220,7 @@ def run_experiment(
         # no budget this is exactly ``spec.train_idx``, so the published run is unchanged.
         # It has to be capped here too — a clustering aligned on more labels than the arms
         # fine-tune on would give the semi-supervised arm information its own baseline does
-        # not have, and the curve would measure that gap instead of the budget.
+        # not have, and the curve would then measure that gap, not the budget.
         readable_idx = np.sort(np.concatenate([inner_train_idx, inner_val_idx]))
         train_ids, train_labels = eval_ids[readable_idx], eval_labels[readable_idx]
 
@@ -321,11 +321,11 @@ def run_experiment(
     folds_frame = pd.DataFrame(folds_meta)
 
     run_id = f"{mode}-{time.strftime('%Y%m%d-%H%M%S')}"
-    # One canonical directory per mode rather than one per run: the repository publishes a
+    # One canonical directory per mode, not one per run: the repository publishes a
     # current result, not an archive of attempts. The run id and the timestamp live in the
     # manifest, so a published figure is still traceable to the run that produced it.
-    # One canonical directory per run rather than per invocation. ``run_name`` exists so a
-    # second set of arms at the same budget lands beside the first instead of on top of it.
+    # One canonical directory per run, not per invocation. ``run_name`` exists so a
+    # second set of arms at the same budget lands beside the first, never on top of it.
     default_name = mode if protocol.label_budget is None else f"budget-{protocol.label_budget}"
     directory = Path(output_root) / (run_name or default_name)
     directory.mkdir(parents=True, exist_ok=True)

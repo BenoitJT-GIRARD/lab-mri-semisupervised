@@ -164,7 +164,7 @@ def series_colours(
             if slot >= len(SERIES):
                 raise ValueError(
                     f"{len(names)} series for {len(SERIES)} distinguishable colours: "
-                    "split the figure rather than reusing a hue"
+                    "split the figure; no hue is reused"
                 )
             colours[name] = SERIES[slot]
             slot += 1

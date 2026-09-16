@@ -132,12 +132,12 @@ class TrainingConfig:
     confidence_quantiles: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75)
     #: Histogram-equalise in both transforms. Must match the FeatureConfig the run reads.
     equalize: bool = False
-    #: Weight on the pseudo-label loss for the joint arms. Fixed rather than tuned: the
+    #: Weight on the pseudo-label loss for the joint arms. Fixed, never tuned: the
     #: hypothesis under test is that the sequential pre-training is forgotten, not what the
     #: best weight would be, and tuning it would conflate the two questions.
     pseudo_loss_weight: float = 1.0
     #: A pool image is self-labelled when the first pass puts it beyond this probability,
-    #: on either side. 0.9 rather than a tuned value: the question is whether labels from
+    #: on either side. 0.9, a round number nobody searched for: the question is whether
     #: the decision function beat labels from a clustering, not where the best cut sits.
     self_training_threshold: float = 0.9
 
@@ -153,9 +153,9 @@ class ProtocolConfig:
     #: Cap on the number of training labels each fold may use, or ``None`` for all of them.
     #: It caps the fine-tuning **and** what the clustering may read: otherwise the
     #: semi-supervised arm would carry more label information than its own baseline, and
-    #: the curve would measure that imbalance instead of the budget.
+    #: the curve would then measure that imbalance, not the budget.
     label_budget: int | None = None
-    # Must match ``protocol.arms.ARMS`` exactly. It is spelled out rather than
+    # Must match ``protocol.arms.ARMS`` exactly. It is spelled out here and not
     # imported because ``arms`` imports this module, and a test asserts the two agree —
     # adding an arm here and forgetting this line ran a three-arm experiment while the
     # code believed it had four.
