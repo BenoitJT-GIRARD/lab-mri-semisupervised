@@ -6,7 +6,7 @@
   <img src="docs/badges/python.svg" alt="Python 3.12">
   <img src="docs/badges/stack.svg" alt="Built with torchvision · PyTorch · scikit-learn">
   <img src="docs/badges/licence.svg" alt="License: MIT">
-  <img src="docs/badges/coverage.svg" alt="coverage 72%">
+  <img src="docs/badges/coverage.svg" alt="coverage 71%">
 </p>
 
 **Project status** — the experiments are done and the repository is archived at that state.
