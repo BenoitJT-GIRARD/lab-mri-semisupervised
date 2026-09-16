@@ -1,0 +1,28 @@
+{
+  "command": "uv run python scripts/smoke.py",
+  "ran_at": "2026-09-15",
+  "git_revision": "c9f5b45f3391b558e2506fb85f63d68426f47f22",
+  "tool_versions": {
+    "python": "3.12.12",
+    "torch": "2.11.0+cu126",
+    "torchvision": "0.26.0+cu126",
+    "scikit-learn": "1.8.0",
+    "matplotlib": "3.10.9",
+    "pandas": "3.0.2",
+    "uv": "uv 0.11.6 (65950801c 2026-04-09 x86_64-pc-windows-msvc)",
+    "docker": "Docker version 29.2.0, build 0b9d198"
+  },
+  "duration_seconds": 53.3,
+  "key_output": [
+    "reports/figures/arms_comparison.png",
+    "reports/figures/calibration.png",
+    "reports/figures/label_efficiency.png",
+    "reports/figures/leak_price.png",
+    "reports/figures/mechanisms.png",
+    "reports/figures/paired_differences.png",
+    "reports/figures/roc_arms.png",
+    "reports/experiments/corrected/summary.md",
+    "reports/experiments/legacy/summary.md"
+  ],
+  "workflow_run_url": null
+}
