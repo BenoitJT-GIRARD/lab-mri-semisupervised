@@ -1,7 +1,7 @@
 """Assert that the protocol cannot leak.
 
-The audit found three leaks that a reader could not have seen from the code, because each
-of them looked like an ordinary line. These tests state the invariants those lines broke,
+Three leaks got through review, because each of them looked like an ordinary line. These
+tests state the invariants those lines broke,
 so that breaking them again fails a build rather than producing a better-looking number.
 
 They watch the orchestration rather than the training: a spy replaces `run_arm` and records

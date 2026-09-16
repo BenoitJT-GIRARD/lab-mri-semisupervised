@@ -9,8 +9,8 @@ Every file here carries its tier where a reader sees it, at the top of the modul
 
     pytestmark = pytest.mark.integration
 
-The collection hook below refuses a file that does not. Without it the rule is checked once
-a day by the audit; with it, the suite refuses to run the moment a file arrives unmarked, and
+The collection hook below refuses a file that does not. Without it an unmarked file is only
+noticed when someone reads it; with it, the suite refuses to run the moment one arrives, and
 ``-m "not integration"`` keeps meaning what it says.
 
 Fixtures shared by this tier — a session against a container, a temporary index, a loaded

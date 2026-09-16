@@ -31,7 +31,7 @@ def test_a_single_class_leaves_the_threshold_at_the_default() -> None:
 
 
 def test_a_threshold_move_raises_recall_while_the_ranking_stays_put() -> None:
-    """The contradiction the audit found, reproduced on four images.
+    """The contradiction that started all this, reproduced on four images.
 
     Lowering the threshold catches the missed positive — recall goes up — and the AUC does
     not move an inch, because the ranking is unchanged. Reporting only the first number is

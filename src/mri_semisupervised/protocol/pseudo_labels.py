@@ -1,7 +1,7 @@
 """Pseudo-labels fitted inside the training fold.
 
-This module is the correction the audit asked for. Previously the pipeline did all three
-of the following **once, over the whole dataset**, and reused the result in every fold:
+This module is the correction of a leak. Previously the pipeline did all three of the
+following **once, over the whole dataset**, and reused the result in every fold:
 
 * fit the clustering on features of all 1 506 images;
 * choose which of five algorithms to use, by ARI against all 100 labels;

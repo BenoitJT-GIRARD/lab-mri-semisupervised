@@ -1,4 +1,4 @@
-"""Metrics, and the separation the audit showed was missing.
+"""Metrics, split so that a threshold move can never be read as a better model.
 
 The published comparison had the semi-supervised arm raising recall on the positive class
 from 0.900 to 0.960 **while its ROC AUC fell** from 0.982 to 0.954. A model that ranks

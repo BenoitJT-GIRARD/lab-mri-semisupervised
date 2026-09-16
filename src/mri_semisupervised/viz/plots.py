@@ -31,7 +31,7 @@ except ImportError:  # pragma: no cover
     HAS_UMAP = False
 
 # The shared style, installed once at import: seaborn's own theme would override the
-# portfolio palette in whichever module happened to be imported last.
+# palette in whichever module happened to be imported last.
 apply_style()
 
 
