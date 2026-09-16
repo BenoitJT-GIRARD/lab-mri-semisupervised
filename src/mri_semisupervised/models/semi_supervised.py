@@ -1,10 +1,8 @@
 """The classifier the three arms share.
 
 This module used to hold the training loops and the cross-validation as well. They now
-live in :mod:`mri_semisupervised.protocol`, because what they do is protocol — which fold
-sees which image, which labels may be read, where the checkpoint is chosen — and not
-modelling. Keeping them here alongside the architecture is what let a leak look like an
-ordinary line.
+live in :mod:`mri_semisupervised.protocol`, because deciding what a step may look at is
+not modelling. Next to the architecture, those decisions were invisible.
 
 What is left is the one thing that really is a model: a pre-trained ResNet with a fresh
 two-class head.

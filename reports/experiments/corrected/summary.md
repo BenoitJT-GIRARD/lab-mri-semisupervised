@@ -1,6 +1,6 @@
 # corrected-20260903-202001
 
-Written by `scripts/rebuild_summaries.py` from the artefacts of this run.
+Written by `scripts/rebuild_summaries.py` from the artefacts of the run of 2026-09-03.
 
 Protocol: **corrected**
 

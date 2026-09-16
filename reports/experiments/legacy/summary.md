@@ -1,6 +1,6 @@
 # legacy-20260903-120310
 
-Written by `scripts/rebuild_summaries.py` from the artefacts of this run.
+Written by `scripts/rebuild_summaries.py` from the artefacts of the run of 2026-09-03.
 
 Protocol: **legacy**
 
@@ -35,6 +35,14 @@ Protocol: **legacy**
 | supervised vs semi_supervised | recall_positive | +0.048 | [+0.004, +0.096] | 0.034 |
 | supervised vs permuted_control | recall_positive | +0.000 | [-0.028, +0.032] | 0.978 |
 | semi_supervised vs permuted_control | recall_positive | -0.048 | [-0.104, +0.008] | 0.091 |
+
+## Against the `corrected` run, paired over the 25 shared folds
+
+| arm | this run | corrected | difference | 95% CI | p |
+|---|---|---|---|---|---|
+| permuted_control | 0.968 | 0.952 | +0.016 | [-0.006, +0.042] | 0.175 |
+| semi_supervised | 0.959 | 0.958 | +0.001 | [-0.015, +0.016] | 0.998 |
+| supervised | 0.964 | 0.966 | -0.002 | [-0.011, +0.009] | 0.703 |
 
 ## Clustering method chosen, fold by fold
 

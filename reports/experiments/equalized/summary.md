@@ -1,6 +1,6 @@
 # equalized-20260903-225735
 
-Written by `scripts/rebuild_summaries.py` from the artefacts of this run.
+Written by `scripts/rebuild_summaries.py` from the artefacts of the run of 2026-09-03.
 
 Protocol: **equalized**
 
@@ -43,6 +43,15 @@ Protocol: **equalized**
 | semi_supervised vs semi_supervised_confident | recall_positive | +0.032 | [-0.016, +0.080] | 0.199 |
 | semi_supervised vs permuted_control | recall_positive | +0.024 | [-0.028, +0.092] | 0.526 |
 | semi_supervised_confident vs permuted_control | recall_positive | -0.008 | [-0.064, +0.048] | 0.729 |
+
+## Against the `corrected` run, paired over the 25 shared folds
+
+| arm | this run | corrected | difference | 95% CI | p |
+|---|---|---|---|---|---|
+| permuted_control | 0.968 | 0.952 | +0.016 | [-0.001, +0.037] | 0.062 |
+| semi_supervised | 0.964 | 0.958 | +0.006 | [-0.013, +0.022] | 0.514 |
+| semi_supervised_confident | 0.955 | 0.945 | +0.009 | [-0.011, +0.032] | 0.417 |
+| supervised | 0.979 | 0.966 | +0.013 | [+0.003, +0.024] | 0.006 |
 
 ## Clustering method chosen, fold by fold
 

@@ -1,9 +1,9 @@
 # What the published numbers mean.
 #
-# Every numeric column of every table in the README, and every axis of every figure, is a key
-# here. A label alone — `ROC AUC`, `± 0.035` — leaves the reader to guess what was measured,
-# over what, and whether larger is better. Two quantities in this repository are both called
-# ROC AUC and differ by a point or two; they have separate entries for that reason.
+# Two quantities here are both called ROC AUC and differ by a point or two, which is reason
+# enough for this file to exist. Each column of the README tables and each axis of each
+# figure has its key below, with the population it was measured over, the dispersion beside
+# it and the direction that counts as better.
 
 metrics:
 

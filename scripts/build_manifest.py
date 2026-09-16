@@ -8,7 +8,13 @@ from __future__ import annotations
 
 import json
 
-from mri_semisupervised.config import LABELLED_DIR, MANIFEST_PATH, UNLABELLED_DIR, ensure_dirs
+from mri_semisupervised.config import (
+    LABELLED_DIR,
+    MANIFEST_PATH,
+    REPORTS_DIR,
+    UNLABELLED_DIR,
+    ensure_dirs,
+)
 from mri_semisupervised.data.manifest import apply_duplicate_rules, build_manifest, summarise
 
 
@@ -40,9 +46,16 @@ def main() -> None:
             "training, never from evaluation."
         )
 
+    # Beside the manifest, which lives with the images and is never published, and under
+    # reports/, which is. The data card quotes these counts, and a reader without the archive
+    # can still check that the page and the inventory agree.
     (MANIFEST_PATH.parent / "dataset_summary.json").write_text(
-        json.dumps(facts, indent=2), encoding="utf-8"
+        json.dumps(facts, indent=2) + "\n", encoding="utf-8", newline=""
     )
+    published = REPORTS_DIR / "dataset_summary.json"
+    published.parent.mkdir(parents=True, exist_ok=True)
+    published.write_text(json.dumps(facts, indent=2) + "\n", encoding="utf-8", newline="")
+    print(f"[ok] summary written  : {published}")
 
 
 if __name__ == "__main__":

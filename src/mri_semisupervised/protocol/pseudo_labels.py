@@ -152,8 +152,8 @@ def composition(pseudo: PseudoLabelSet) -> dict[str, float]:
 
     The share is taken over the labelled pseudo-labels alone. A fold where most of the pool
     landed in an unalignable cluster has a share that says nothing about the two classes,
-    and dividing by the total would hide that behind a small number instead of showing it
-    beside ``n_pseudo_noise``.
+    and dividing by the total would hide that behind a small number, where the share beside
+    ``n_pseudo_noise`` shows it.
     """
     labels = np.asarray(pseudo.labels)
     negative = int((labels == 0).sum())
@@ -170,8 +170,8 @@ def composition(pseudo: PseudoLabelSet) -> dict[str, float]:
 def filter_by_confidence(pseudo: PseudoLabelSet, quantile: float) -> PseudoLabelSet:
     """Keep the pseudo-labels above the given quantile of the confidence distribution.
 
-    ``quantile=0`` keeps everything, which is a real option and not a degenerate one: the
-    arm must be able to choose not to filter, and to say so in its manifest.
+    ``quantile=0`` keeps everything, which is a real option and not a degenerate one: an
+    arm that cannot decline to filter cannot report that filtering bought nothing.
 
     An empty pool is never returned. A quantile that would drop every point leaves the most
     confident one, because a pre-training set of size zero is not the same experiment as a
@@ -200,9 +200,9 @@ def _candidates(features: np.ndarray, seed: int, cfg: ClusteringConfig):
     it is allowed to read. The clustering itself is unsupervised, and stays so.
 
     A candidate that cannot fit on a given fold — the GMM does this when the fold's
-    covariance turns out singular — is dropped **for that fold**, and the failure is
-    returned rather than swallowed. Silently substituting another method would change what
-    the experiment compares without saying so.
+    covariance turns out singular — is dropped **for that fold**, and the failure comes
+    back with it. Silently substituting another method would change what the experiment
+    compares without saying so.
     """
     factories = {
         "KMeans": lambda: fit_kmeans(features, None, n_clusters=cfg.n_clusters, seed=seed),
@@ -308,9 +308,9 @@ def permute(pseudo: PseudoLabelSet, seed: int) -> PseudoLabelSet:
     """Shuffle the pseudo-labels while keeping their distribution.
 
     The negative control. Same images, same class proportions, same number of gradient
-    steps — only the *correspondence* between an image and its pseudo-label is destroyed.
-    If the semi-supervised arm cannot beat this, what helped was exposure to the images,
-    not the information the clustering found.
+    steps — what the shuffle removes is the *pairing*, and nothing else. An arm that
+    cannot beat it gained from seeing the scans, not from what the clustering read in
+    them.
     """
     rng = np.random.default_rng(seed)
     shuffled = pseudo.labels.copy()

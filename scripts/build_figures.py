@@ -30,6 +30,7 @@ from mri_semisupervised.config import (
     ensure_dirs,
 )
 from mri_semisupervised.figure_style import (
+    PALETTE,
     apply_style,
     close,
     reference_line,
@@ -313,8 +314,8 @@ def figure_leak_price(
 def figure_calibration(predictions: pd.DataFrame, meta: dict, path: Path) -> None:
     """Reliability curves: what a score of 0.4 is actually worth.
 
-    ROC AUC cannot see this. A model whose ranking is perfect and whose scale is squashed
-    scores 1.0 and still tells a clinician the wrong number.
+    Ranking metrics are blind here. Squash every score towards the middle and the ROC AUC
+    does not move, while the number a clinician reads becomes meaningless.
     """
     summary, curves = summarise_calibration(predictions, n_bins=10)
     figure, axis = plt.subplots(figsize=(6.5, 6))
@@ -354,17 +355,24 @@ def figure_label_efficiency(path: Path) -> pd.DataFrame | None:
         loaded = _load(f"budget-{budget}")
         if loaded is None:
             continue
-        points.append((budget, loaded[0]))
+        points.append((budget, loaded[0], loaded[2]))
     full = _load("corrected")
     if full is not None:
-        points.append((int(full[2]["protocol"].get("label_budget") or 59), full[0]))
+        points.append((int(full[2]["protocol"].get("label_budget") or 59), full[0], full[2]))
     if len(points) < 2:
         print("[warn] not enough budgets to draw the curve")
         return None
 
     rows = []
-    for budget, per_fold in sorted(points):
+    for budget, per_fold, meta in sorted(points, key=lambda point: point[0]):
         pivot = per_fold.pivot(index="fold", columns="arm", values="roc_auc")
+        # The table in the README publishes a folds count and an n beside every row. They
+        # belong in the artefact the marker points at, or the README is the only place they
+        # exist.
+        population = {
+            "folds": len(pivot.index),
+            "evaluation_images": int(meta.get("evaluation_images") or 0),
+        }
         for arm in pivot.columns:
             rows.append(
                 {
@@ -372,6 +380,7 @@ def figure_label_efficiency(path: Path) -> pd.DataFrame | None:
                     "arm": arm,
                     "mean": float(pivot[arm].mean()),
                     "sd": float(pivot[arm].std()),
+                    **population,
                 }
             )
         if {"semi_supervised", "permuted_control"} <= set(pivot.columns):
@@ -386,6 +395,7 @@ def figure_label_efficiency(path: Path) -> pd.DataFrame | None:
                     "ci_low": out["ci_low"],
                     "ci_high": out["ci_high"],
                     "p_value": out["p_value"],
+                    **population,
                 }
             )
     frame = pd.DataFrame(rows)
@@ -456,6 +466,10 @@ def figure_mechanisms(path: Path) -> pd.DataFrame | None:
         if loaded is None:
             continue
         pivot = loaded[0].pivot(index="fold", columns="arm", values="roc_auc")
+        population = {
+            "folds": len(pivot.index),
+            "evaluation_images": int(loaded[2].get("evaluation_images") or 0),
+        }
         for arm, control in MECHANISMS.items():
             if not {arm, control} <= set(pivot.columns):
                 continue
@@ -471,6 +485,7 @@ def figure_mechanisms(path: Path) -> pd.DataFrame | None:
                     "ci_low": out["ci_low"],
                     "ci_high": out["ci_high"],
                     "p_value": out["p_value"],
+                    **population,
                 }
             )
     if not rows:
@@ -501,13 +516,118 @@ def figure_mechanisms(path: Path) -> pd.DataFrame | None:
     save_figure(
         figure,
         path,
-        n={"evaluation images": 99, "folds": 25, "comparisons": len(frame)},
+        n={
+            "evaluation images": int(frame["evaluation_images"].max()),
+            "folds": int(frame["folds"].max()),
+            "comparisons": len(frame),
+        },
         dispersion="95 % bootstrap interval on the paired difference",
         source=SOURCE,
     )
     close(figure)
     print(f"[ok] {path.name}")
     return frame
+
+
+def figure_dataset(manifest: pd.DataFrame, path: Path) -> None:
+    """What the inventory found, category by category.
+
+    The README says 1 406 unlabelled files and the manifests say a pool of 1 311. Both are
+    true, and the difference is the duplicate rules: this figure is where the two numbers
+    meet.
+    """
+    labelled = manifest[manifest["pool"] == "labelled"]
+    unlabelled = manifest[manifest["pool"] == "unlabelled"]
+    counts = {
+        "evaluation images": int(labelled["image_id"].nunique()),
+        "unlabelled, kept for pre-training": int(unlabelled["kept_for_training"].sum()),
+        "redundant copies inside the pool": int(
+            (unlabelled["exclusion_reason"] == "redundant_copy").sum()
+        ),
+        "copies of an evaluation image": int(
+            (unlabelled["exclusion_reason"] == "copy_of_labelled").sum()
+        ),
+        "repeated inside the labelled pool": int(
+            (labelled["exclusion_reason"] == "repeated_labelled_copy").sum()
+        ),
+    }
+    kept = list(counts)[:2]
+    colours = series_colours(list(counts), control=list(counts)[2:])
+
+    figure, axis = plt.subplots(figsize=(7.5, 3.4))
+    positions = range(len(counts))
+    axis.barh(
+        list(positions),
+        list(counts.values()),
+        color=[colours[name] for name in counts],
+    )
+    for position, (name, count) in zip(positions, counts.items(), strict=True):
+        axis.text(
+            count + 12,
+            position,
+            f"{count}" + ("" if name in kept else "  set aside"),
+            va="center",
+            fontsize=9,
+            color=PALETTE["ink"] if name in kept else PALETTE["muted"],
+        )
+    axis.set_yticks(list(positions))
+    axis.set_yticklabels(list(counts), fontsize=9)
+    axis.invert_yaxis()
+    axis.set_xlim(0, max(counts.values()) * 1.25)
+    axis.set_xlabel("files, identified by the SHA-256 of their decoded pixels")
+    axis.set_ylabel("what the inventory found")
+    axis.set_title("What the duplicate rules do to 1 506 files")
+    figure.tight_layout()
+    save_figure(figure, path, n=len(manifest), source=SOURCE)
+    close(figure)
+    print(f"[ok] {path.name}")
+
+
+def figure_embedding_map(path: Path) -> None:
+    """The embedding space the clustering works in, projected to two dimensions.
+
+    No scan appears here: a t-SNE coordinate is a derived number, and the archive allows no
+    redistribution of the images themselves. What a reader sees is whether the two classes
+    occupy different regions at all.
+    """
+    from mri_semisupervised.config import ClusteringConfig, FeatureConfig
+    from mri_semisupervised.features.extractor import load_cached_features
+    from mri_semisupervised.models.clustering import reduce_pca, standardise
+    from mri_semisupervised.viz.plots import project_2d
+
+    cache = FeatureConfig().cache_path
+    if not cache.exists():
+        print("[warn] no feature cache: run scripts/build_features.py")
+        return
+    features, index = load_cached_features(cache)
+    reduced, _ = standardise(features)
+    reduced, _ = reduce_pca(reduced, target_variance=ClusteringConfig().pca_variance)
+    coordinates = project_2d(reduced, method="tsne", seed=42)
+
+    names = index["label_name"].fillna("unlabelled").to_numpy()
+    groups = ["cancer", "normal", "unlabelled"]
+    colours = series_colours(groups, control=["unlabelled"])
+
+    figure, axis = plt.subplots(figsize=(6.5, 5.5))
+    for name in reversed(groups):
+        mask = names == name
+        axis.scatter(
+            coordinates[mask, 0],
+            coordinates[mask, 1],
+            s=14 if name == "unlabelled" else 26,
+            alpha=0.45 if name == "unlabelled" else 0.9,
+            color=colours[name],
+            label=f"{name} ({int(mask.sum())})",
+            linewidths=0,
+        )
+    axis.set_xlabel("t-SNE dimension 1, arbitrary units")
+    axis.set_ylabel("t-SNE dimension 2, arbitrary units")
+    axis.set_title("The space the clustering works in")
+    axis.legend(fontsize=9)
+    figure.tight_layout()
+    save_figure(figure, path, n=len(names), source=SOURCE)
+    close(figure)
+    print(f"[ok] {path.name}")
 
 
 def main() -> None:
@@ -536,22 +656,26 @@ def main() -> None:
     if manifest_path.exists():
         manifest = pd.read_parquet(manifest_path)
         errors = per_image_errors(predictions, per_fold, manifest)
-        target = EXPERIMENTS_DIR / "corrected" / "per_image_errors.parquet"
-        errors.to_parquet(target, index=False)
-        print(f"[ok] {target.name}")
+        # Parquet for a table with one row per evaluation image per fold, and typed columns;
+        # CSV for the two aggregates below, which a reader opens to check a published number.
+        errors_path = EXPERIMENTS_DIR / "corrected" / "per_image_errors.parquet"
+        errors.to_parquet(errors_path, index=False)
+        print(f"[ok] {errors_path.name}")
         print(pool_overlap_rates(errors).round(3).to_string(index=False))
+        figure_dataset(manifest, FIGURES_DIR / "dataset_composition.png")
+        figure_embedding_map(FIGURES_DIR / "embedding_map.png")
 
     curve = figure_label_efficiency(FIGURES_DIR / "label_efficiency.png")
     if curve is not None:
-        target = EXPERIMENTS_DIR / "label_efficiency.parquet"
-        curve.to_parquet(target, index=False)
-        print(f"[ok] {target.name}")
+        curve_path = EXPERIMENTS_DIR / "label_efficiency.csv"
+        curve.to_csv(curve_path, index=False, lineterminator="\n")
+        print(f"[ok] {curve_path.name}")
 
     mechanisms = figure_mechanisms(FIGURES_DIR / "mechanisms.png")
     if mechanisms is not None:
-        target = EXPERIMENTS_DIR / "mechanisms.parquet"
-        mechanisms.to_parquet(target, index=False)
-        print(f"[ok] {target.name}")
+        mechanisms_path = EXPERIMENTS_DIR / "mechanisms.csv"
+        mechanisms.to_csv(mechanisms_path, index=False, lineterminator="\n")
+        print(f"[ok] {mechanisms_path.name}")
         print(mechanisms.round(4).to_string(index=False))
 
 

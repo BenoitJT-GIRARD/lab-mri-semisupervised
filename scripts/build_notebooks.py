@@ -101,8 +101,9 @@ def build_dataset_notebook() -> list[nbf.NotebookNode]:
 The plan was to embed them with a frozen ResNet50, cluster the embeddings, and turn the
 clusters into pseudo-labels for a semi-supervised model.
 
-This notebook starts one step earlier, with a question the original pipeline never asked:
-**are these 1 506 files 1 506 images?**
+This notebook starts one step earlier, with a question the original pipeline never asked.
+
+**Are these files as many images as the folder listing suggests?**
 """),
         code(PREAMBLE),
         md("""
@@ -129,15 +130,17 @@ for key, value in facts.items():
 
 Three findings, none of them visible from the folder listing:
 
-* the labelled pool holds **one image twice**, so the evaluation set is 99 images, not 100 —
+* the labelled pool holds one image twice, so the evaluation set is 99 images, not 100 —
   and the class balance is 50 / 49, not the announced 50 / 50;
-* **31 of those 99 evaluation images also sit in the unlabelled pool**, byte for byte. The
-  semi-supervised arm pre-trains on that pool, so a third of every test fold was already
-  seen — whatever the cross-validation does;
+* 31 of those 99 evaluation images also sit in the unlabelled pool, byte for byte;
 * the unlabelled pool carries 63 redundant copies, which silently weight the pre-training.
 
-The leak is also **asymmetric**: 23 `normal` against 8 `cancer`. It does not add noise, it
-leans.
+<!-- source: ../reports/dataset_summary.json -->
+**31 of the n = 99 evaluation images were already seen during pre-training.** That is the
+finding the rest of this repository has to work around: the semi-supervised arm pre-trains on
+the unlabelled pool, so a third of every test fold sat in it, whatever the cross-validation
+does. The leak is also asymmetric — 23 `normal` against 8 `cancer` — so it
+does not add noise, it leans.
 """),
         code("""
 leaked_ids = set(
@@ -285,7 +288,8 @@ The first version of this comparison concluded that the semi-supervised arm impr
 on the cancer class, 0.900 to 0.960. Three leaks stood behind that number, all of them
 pushing the same way:
 
-1. **31 of the 99 evaluation images were in the pre-training pool** (notebook 01);
+<!-- source: ../reports/dataset_summary.json -->
+1. **31 of the n = 99 evaluation images were in the pre-training pool** (notebook 01);
 2. the **clustering method** was chosen by ARI against every label, test folds included;
 3. the **cluster-to-class alignment** was decided by a vote over those same labels.
 
@@ -328,9 +332,10 @@ meta = json.loads((corrected / "manifest.json").read_text(encoding="utf-8"))
 print(f"dataset fingerprint : {meta['dataset_fingerprint']}")
 print(f"evaluation images   : {meta['evaluation_images']}")
 print(f"unlabelled pool     : {meta['unlabelled_pool']}")
-print(f"folds               : {meta['protocol']['n_splits']} x {meta['protocol']['n_repeats']} repeats")
+print(
+    f"folds               : {meta['protocol']['n_splits']} x {meta['protocol']['n_repeats']} repeats"
+)
 print(f"gpu                 : {meta['versions']['gpu']}")
-
 """),
         md("""
 ## 2. The arms, side by side
@@ -420,21 +425,27 @@ control, never against the plain baseline.
 stage_b = EXPERIMENTS_DIR / "corrected-stageb" / "per_fold.parquet"
 if stage_b.exists():
     mech = pd.read_parquet(stage_b).pivot(index="fold", columns="arm", values="roc_auc")
-    joined = pd.concat([pivot_full := per_fold.pivot(index="fold", columns="arm",
-                                                     values="roc_auc"), mech], axis=1)
+    joined = pd.concat(
+        [pivot_full := per_fold.pivot(index="fold", columns="arm", values="roc_auc"), mech], axis=1
+    )
     rows = []
-    for arm, control in [("semi_supervised_joint", "joint_permuted_control"),
-                         ("self_training", "self_training_control")]:
+    for arm, control in [
+        ("semi_supervised_joint", "joint_permuted_control"),
+        ("self_training", "self_training_control"),
+    ]:
         against_control = paired_difference(joined[arm].to_numpy(), joined[control].to_numpy())
-        against_baseline = paired_difference(joined[arm].to_numpy(),
-                                             joined["supervised"].to_numpy())
-        rows.append({
-            "arm": arm,
-            "vs its control": f"{against_control['mean_difference']:+.3f} "
-                              f"(p={against_control['p_value']:.3f})",
-            "vs supervised": f"{against_baseline['mean_difference']:+.3f} "
-                             f"(p={against_baseline['p_value']:.3f})",
-        })
+        against_baseline = paired_difference(
+            joined[arm].to_numpy(), joined["supervised"].to_numpy()
+        )
+        rows.append(
+            {
+                "arm": arm,
+                "vs its control": f"{against_control['mean_difference']:+.3f} "
+                f"(p={against_control['p_value']:.3f})",
+                "vs supervised": f"{against_baseline['mean_difference']:+.3f} "
+                f"(p={against_baseline['p_value']:.3f})",
+            }
+        )
     display(pd.DataFrame(rows))
 """),
         md("""
@@ -447,8 +458,8 @@ against the correct control can still mean the opposite of what it looks like.
 ## 1. What a returned probability is worth
 
 The protocol publishes scores. Whether they mean anything as probabilities is a separate
-question, and ROC AUC cannot answer it: a model whose ranking is perfect and whose scale is
-squashed scores 1.0 either way.
+question, and ROC AUC cannot answer it: the ordering survives any squashing of the scale,
+so a model that ranks every image correctly can still return 0.4 for all of them.
 """),
         code("""
 from mri_semisupervised.protocol.calibration import summarise_calibration
@@ -486,8 +497,10 @@ seeing every label.
         code("""
 print(folds["pseudo_method"].value_counts().to_string())
 print()
-print(f"ARI on the training labels: {folds['pseudo_ari_on_train'].mean():.3f} "
-      f"+/- {folds['pseudo_ari_on_train'].std():.3f}")
+print(
+    f"ARI on the training labels: {folds['pseudo_ari_on_train'].mean():.3f} "
+    f"+/- {folds['pseudo_ari_on_train'].std():.3f}"
+)
 print(f"pseudo-labels per fold    : {folds['n_pseudo'].mean():.0f}")
 """),
         md("""

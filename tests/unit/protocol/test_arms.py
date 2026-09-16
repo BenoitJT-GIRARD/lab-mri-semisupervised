@@ -154,17 +154,17 @@ def test_the_joint_control_uses_the_same_images_with_the_pairing_destroyed(fold)
 
 
 def test_a_zero_weight_still_moves_the_predictions_because_of_batchnorm(fold) -> None:
-    """The joint arm carries a second treatment, and it must be named rather than hidden.
+    """The joint arm carries a second treatment, and this test is where it is named.
 
     With the pseudo loss weighted to zero the gradient is identical — the training loss is
-    the same to the last digit — and the predictions still differ. The pseudo batches go
-    through the network in train mode, so BatchNorm updates its running statistics on the
-    unlabelled pool. That is unsupervised adaptation to the target distribution, and it is
-    arguably a form of semi-supervision in its own right.
+    the same to the last digit — and the predictions still differ. Train mode is enough on
+    its own: the pool batches move the running statistics of every BatchNorm layer. That
+    is adaptation to the target distribution without a single label, and arguably
+    semi-supervision in itself.
 
     It is also why the joint arm may only be judged against the joint control, which passes
-    exactly the same images through the same BatchNorm. Compared against the plain
-    supervised baseline, the two treatments would be indistinguishable.
+    exactly the same images through the same layers. Against the plain supervised
+    baseline, the two treatments would be indistinguishable.
     """
     from dataclasses import replace
 

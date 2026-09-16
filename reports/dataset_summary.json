@@ -1,0 +1,22 @@
+{
+  "files": 1506,
+  "unreadable_files": 0,
+  "distinct_images": 1410,
+  "labelled_files": 100,
+  "evaluation_images": 99,
+  "repeated_labelled_copies_dropped": 1,
+  "unlabelled_files": 1406,
+  "labelled_also_in_unlabelled": 31,
+  "labelled_also_in_unlabelled_files": 32,
+  "leaked_by_class": {
+    "normal": 23,
+    "cancer": 8
+  },
+  "evaluation_class_balance": {
+    "cancer": 50,
+    "normal": 49
+  },
+  "redundant_copies_dropped": 63,
+  "unlabelled_kept_for_training": 1311,
+  "fingerprint": "8f22a69ffa46ca1f"
+}

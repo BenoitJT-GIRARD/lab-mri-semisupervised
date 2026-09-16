@@ -47,6 +47,38 @@
       "style_version": 1,
       "written": "2026-09-15"
     },
+    "dataset_composition.png": {
+      "axes": [
+        {
+          "title": "",
+          "x": "files, identified by the SHA-256 of their decoded pixels",
+          "y": "what the inventory found"
+        }
+      ],
+      "dispersion": null,
+      "dpi": 200,
+      "n": "n = 1506",
+      "sha256": "f2c58081775d2e42e82a9d9b08f7659140bf741ae1203280f12a589e31fadf99",
+      "source": "scripts/build_figures.py",
+      "style_version": 1,
+      "written": "2026-09-15"
+    },
+    "embedding_map.png": {
+      "axes": [
+        {
+          "title": "",
+          "x": "t-SNE dimension 1, arbitrary units",
+          "y": "t-SNE dimension 2, arbitrary units"
+        }
+      ],
+      "dispersion": null,
+      "dpi": 200,
+      "n": "n = 1506",
+      "sha256": "478ab6f4ddfaea7ebe19e6ba1cdc3911ecf11277e05dc69bbaa6b469c991f5f4",
+      "source": "scripts/build_figures.py",
+      "style_version": 1,
+      "written": "2026-09-15"
+    },
     "label_efficiency.png": {
       "axes": [
         {

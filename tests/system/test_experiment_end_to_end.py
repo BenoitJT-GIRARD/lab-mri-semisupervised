@@ -70,9 +70,7 @@ def prepared_run(tmp_path: Path) -> Path:
         labelled_per_class=12,
         unlabelled_per_class=10,
     )
-    manifest = apply_duplicate_rules(
-        build_manifest(dataset / "labelled", dataset / "unlabelled")
-    )
+    manifest = apply_duplicate_rules(build_manifest(dataset / "labelled", dataset / "unlabelled"))
     processed = tmp_path / "processed"
     processed.mkdir(parents=True, exist_ok=True)
     manifest.to_parquet(processed / "dataset_manifest.parquet", index=False)
@@ -91,13 +89,20 @@ def _run(root: Path, *, arms: tuple[str, ...], out_name: str) -> None:
         [
             sys.executable,
             str(PROJECT_ROOT / "scripts" / "run_experiment.py"),
-            "--folds", str(PROTOCOL.n_splits),
-            "--repeats", str(PROTOCOL.n_repeats),
-            "--epochs-strong", "1",
-            "--image-size", "32",
-            "--arms", ",".join(arms),
-            "--out-name", out_name,
-            "--output-root", str(root),
+            "--folds",
+            str(PROTOCOL.n_splits),
+            "--repeats",
+            str(PROTOCOL.n_repeats),
+            "--epochs-strong",
+            "1",
+            "--image-size",
+            "32",
+            "--arms",
+            ",".join(arms),
+            "--out-name",
+            out_name,
+            "--output-root",
+            str(root),
         ],
         cwd=PROJECT_ROOT,
         env={**os.environ, "MRI_DATA_DIR": str(root), "PYTHONIOENCODING": "utf-8"},
@@ -105,7 +110,7 @@ def _run(root: Path, *, arms: tuple[str, ...], out_name: str) -> None:
         text=True,
         check=False,
     )
-    assert done.returncode == 0, (done.stdout[-2000:] + done.stderr[-2000:])
+    assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-2000:]
 
 
 @pytest.mark.skipif(not _weights_are_cached(), reason="run: uv run python scripts/warm_cache.py")

@@ -1,0 +1,9 @@
+arm,run,mean_roc_auc,sd_across_folds,folds,evaluation_images
+supervised,corrected,0.965511,0.035018,25,99
+self_training,corrected-stageb,0.962978,0.035607,25,99
+semi_supervised,corrected,0.958222,0.040747,25,99
+semi_supervised_joint,corrected-stageb,0.955156,0.040678,25,99
+permuted_control,corrected,0.951911,0.062584,25,99
+self_training_control,corrected-stageb,0.948178,0.069194,25,99
+semi_supervised_confident,corrected,0.945467,0.058054,25,99
+joint_permuted_control,corrected-stageb,0.922311,0.063428,25,99

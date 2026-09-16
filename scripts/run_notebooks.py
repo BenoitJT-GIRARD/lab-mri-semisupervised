@@ -60,9 +60,7 @@ def counters_are_a_run(path: Path) -> list[str]:
 
     document = nbformat.read(path, as_version=4)
     code = [
-        cell
-        for cell in document.cells
-        if cell.cell_type == "code" and "".join(cell.source).strip()
+        cell for cell in document.cells if cell.cell_type == "code" and "".join(cell.source).strip()
     ]
     if not code:
         return []

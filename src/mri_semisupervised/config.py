@@ -19,9 +19,9 @@ from pathlib import Path
 def _project_root() -> Path:
     """The repository root, FOUND and not counted.
 
-    Counting directories up from this file only works from an editable checkout: installed
-    as a wheel the package lands in site-packages, and every path below would point there.
-    The marker is the file that defines the project.
+    A fixed number of ``.parent`` calls holds only while the package sits in a checkout:
+    installed as a wheel it lands in site-packages, and every path below would point
+    there. The marker is the file that defines the project.
     """
     here = Path(__file__).resolve()
     for candidate in here.parents:
@@ -126,9 +126,9 @@ class TrainingConfig:
     # threshold. Never taken from the test fold.
     inner_val_fraction: float = 0.25
     early_stopping_patience: int = 5
-    # Quantiles of the pseudo-label confidence tried by the confidence-filtered arm. The
-    # one that scores best on the inner validation is kept. Zero is in the grid on
-    # purpose: the arm must be able to choose not to filter, and to say so.
+    # Quantiles of the pseudo-label confidence the filtering arm tries. The winner is
+    # picked inside the fold, never on the test images. Zero belongs in the grid: an arm
+    # that can never keep everything cannot report that filtering bought nothing.
     confidence_quantiles: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75)
     #: Histogram-equalise in both transforms. Must match the FeatureConfig the run reads.
     equalize: bool = False

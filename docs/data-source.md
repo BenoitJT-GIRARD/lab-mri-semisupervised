@@ -31,6 +31,7 @@ someone holding the same archive confirm they are looking at the same images.
 so a re-encoded copy of a scan lands on the identity of the original. The counts below are
 what that identity turns up, and they are the reason the protocol looks the way it does:
 
+<!-- source: ../reports/dataset_summary.json -->
 | | |
 |---|---|
 | Distinct labelled images | 99 (one file is a second copy of another) |
@@ -38,10 +39,22 @@ what that identity turns up, and they are the reason the protocol looks the way 
 | Labelled images also sitting in the unlabelled pool | 31, in 32 files |
 | Redundant copies inside the unlabelled pool | 63 |
 | Unlabelled images left for pre-training | 1 311 |
+n = 1 506 files. `scripts/build_manifest.py` writes these counts to
+[`reports/dataset_summary.json`](../reports/dataset_summary.json), which is where they are read from.
+
+<!-- source: ../reports/figures/MANIFEST.json -->
+![What the duplicate rules do to the files the archive ships: the evaluation images and the pre-training pool, then the three categories set aside and why, n = 1 506 files](../reports/figures/dataset_composition.png)
 
 A labelled image found in the pool leaves the **pool** and stays in the evaluation set:
 removing it from the evaluation would be choosing the test set after having looked at it.
 [`protocol.md`](protocol.md) carries the three rules in full, and what they cost.
+
+<!-- source: ../reports/figures/MANIFEST.json -->
+![t-SNE of the ResNet50 embeddings, the two labelled classes in colour and the unlabelled pool in grey behind them, n = 1 506 files](../reports/figures/embedding_map.png)
+
+The embeddings are what the clustering works in, and the projection above is what a reader
+can check without holding a single scan: the two classes sit in different regions, the pool
+covers both, and no image is redistributed to show it.
 
 ## The other input: the pretrained weights
 

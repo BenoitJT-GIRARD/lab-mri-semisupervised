@@ -8,9 +8,10 @@ and the control each one is read against, and the tests that assert the guarante
 
 **Identity comes from content.** Every image is keyed by the SHA-256 of its decoded pixels,
 never by its path. Two copies of one scan in two folders are one image. The duplicate rules
-are written down because each is a decision: a copy found in the pool leaves the pool and
-stays in the evaluation set; a repeated evaluation image is reduced to one; the same content
-under two labels stops the build instead of being quietly resolved.
+are written down because each is a decision: a pool file whose pixels match an evaluation
+image is dropped from the pool and kept in the evaluation set; a repeated evaluation image
+is reduced to one; the same content under two labels stops the build instead of being
+quietly resolved.
 
 **The fold is a boundary.** Clustering, the choice of clustering method, and the mapping from
 cluster to class all happen inside the training fold. The test fold takes part in no
@@ -54,8 +55,8 @@ they differ: pooling mixes folds whose scores sit on slightly different scales, 
 point or two. The run summary publishes both, and every comparison between arms is made
 within one of them, never across.
 
-<!-- source: reports/figures/MANIFEST.json -->
-![Pooled out-of-fold ROC curves, one per arm, with the area under each in the legend and the chance diagonal](../reports/figures/roc_arms.png)
+<!-- source: ../reports/figures/MANIFEST.json -->
+![Pooled out-of-fold ROC curves, one per arm, with the area under each in the legend and the chance diagonal, n = 99 evaluation images](../reports/figures/roc_arms.png)
 
 ## What the earlier version got wrong
 
@@ -76,8 +77,8 @@ helped pick the method that would later be tested on it.
 gradient steps than the baseline it was compared to.
 
 **And the gain it reported was a threshold move.** Recall on the positive class rose from
-0.900 to 0.960 while ROC AUC *fell* from 0.982 to 0.954. A model that ranks better cannot do
-that; what had moved was the implicit cut at 0.5.
+0.900 to 0.960 while the ROC AUC went the other way, 0.982 down to 0.954. Better ranking
+cannot produce that pair of numbers; the cut at 0.5 had shifted, and nothing else had.
 
 One detail is worth the trouble on its own: the agreement between pseudo-labels and true
 labels reads 0.481 ± 0.000 under the leak and 0.457 ± 0.096 once computed per fold. The leak

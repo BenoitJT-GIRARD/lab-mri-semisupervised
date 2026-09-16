@@ -62,9 +62,9 @@ from mri_semisupervised.protocol.splits import (
 CORRECTED = "corrected"
 LEGACY = "legacy"
 #: The corrected protocol, run again with histogram equalisation in both transforms.
-#: Not an arm: equalisation changes the pixels, so it changes the embeddings, the
-#: clustering and everything downstream. It is a second run of the whole protocol,
-#: compared to the first fold by fold.
+#: Not an arm: the equalised cache holds different embeddings, so every clustering and
+#: every score under it is a different measurement. It is a second run of the whole
+#: protocol, compared to the first fold by fold.
 EQUALIZED = "equalized"
 #: Modes that use the leak-free protocol. Only the preprocessing differs.
 CORRECTED_MODES = (CORRECTED, EQUALIZED)

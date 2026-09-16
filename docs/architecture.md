@@ -60,9 +60,9 @@ unlabelled slices is the approach with a real claim on this data, and it is out 
 here: the question asked is whether *clustering-derived* pseudo-labels pay, and answering a
 different question would not answer that one.
 
-**No recalibration.** The probability scale is measurably off, and it stays off: a network
-fine-tuned on twenty images per fold has little chance of being calibrated, and measuring the
-gap is the result. Fitting a calibrator on this much data would mostly fit its own noise.
+**No recalibration.** The probability scale is measurably off, and it stays off. Twenty
+labelled images per fold is far too little for a Platt or an isotonic map to fit anything
+but its own noise, so the size of the gap is published as it stands.
 
 **No histogram equalisation by default.** It buys 1.3 points of supervised AUC and destroys
 the structure the clustering was finding, which is the object under study. Both runs are

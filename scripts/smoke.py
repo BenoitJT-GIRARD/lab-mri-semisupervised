@@ -100,9 +100,7 @@ def tool_versions() -> dict[str, str]:
             versions[name] = "not installed"
     for binary, arguments in (("uv", ("--version",)), ("docker", ("--version",))):
         if shutil.which(binary):
-            done = subprocess.run(
-                [binary, *arguments], capture_output=True, text=True, check=False
-            )
+            done = subprocess.run([binary, *arguments], capture_output=True, text=True, check=False)
             versions[binary] = done.stdout.strip() or "unknown"
     return versions
 

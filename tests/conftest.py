@@ -57,6 +57,7 @@ def root() -> Path:
     """The repository root, for a test that must open a published artefact."""
     return ROOT
 
+
 # --- Fixtures of this repository ------------------------------------------
 
 

@@ -6,7 +6,7 @@
   <img src="docs/badges/python.svg" alt="Python 3.12">
   <img src="docs/badges/stack.svg" alt="Built with torchvision · PyTorch · scikit-learn">
   <img src="docs/badges/licence.svg" alt="License: MIT">
-  <img src="docs/badges/coverage.svg" alt="coverage 68%">
+  <img src="docs/badges/coverage.svg" alt="coverage 69%">
 </p>
 
 **Project status** — the experiments are done and the repository is archived at that state.
@@ -60,7 +60,7 @@ network end to end on a synthetic dataset.
 
 ## The result
 
-<!-- source: reports/experiments/corrected/per_fold.parquet -->
+<!-- source: reports/experiments/arms.csv -->
 | arm | what it adds | mean fold ROC AUC | SD across folds | n | run |
 |---|---|---|---|---|---|
 | `supervised` | nothing: the reference | **0.966** | 0.035 | 99 | `corrected` |
@@ -78,10 +78,10 @@ Every arm that touches the unlabelled pool sits below the baseline that ignores 
 interval clears zero, and the ordering holds at every budget and under every variant.
 
 <!-- source: reports/figures/MANIFEST.json -->
-![Paired differences between arms across the 25 shared folds, each with its 95 % bootstrap interval, on one shared scale centred on zero](reports/figures/paired_differences.png)
+![Paired differences between arms across the 25 shared folds, each with its 95 % bootstrap interval, on one shared scale centred on zero, n = 99 evaluation images](reports/figures/paired_differences.png)
 
 <!-- source: reports/figures/MANIFEST.json -->
-![The same four arms as bars on four metrics, ROC AUC, PR AUC, recall on the cancer class and macro F1, with one standard deviation across folds](reports/figures/arms_comparison.png)
+![The same four arms as bars on four metrics, ROC AUC, PR AUC, recall on the cancer class and macro F1, with one standard deviation across the 25 folds, n = 99 evaluation images](reports/figures/arms_comparison.png)
 
 The pooled out-of-fold ROC curves are in
 [`docs/protocol.md`](docs/protocol.md#two-quantities-called-roc-auc). They answer a different
@@ -92,29 +92,35 @@ are calibrated differently.
 ### The pseudo-labels do carry information
 
 <!-- source: reports/figures/MANIFEST.json -->
-![Each mechanism arm against its own permuted control, at two label budgets, with bootstrap intervals and a zero line to read them against](reports/figures/mechanisms.png)
+![Each mechanism arm against its own permuted control, at two label budgets, with 95 % bootstrap intervals and a zero line to read them against, n = 99 evaluation images](reports/figures/mechanisms.png)
 
+<!-- source: reports/experiments/mechanisms.csv -->
 Against its own control, joint training wins clearly: **+0.033 [+0.009, +0.057], p = 0.008**
-at 59 labels and **+0.113 [+0.050, +0.180], p = 0.002** at 10. The clustering is finding
-something real, and something a shuffle destroys. Self-training does not: both its intervals
-span zero.
+at 59 training labels, over n = 99 evaluation images.
+
+<!-- source: reports/experiments/mechanisms.csv -->
+At 10 labels the same comparison gives **+0.113 [+0.050, +0.180], p = 0.002**, over the same
+n = 99 images. The clustering is finding something real, and something a shuffle destroys.
+Self-training does not: both its intervals span zero.
 
 Against the baseline the same arms still lose, by 0.010 and 0.016, neither significant. So the
 finding is sharper than "semi-supervision does not work here": the pseudo-labels carry real
 information, and injecting it costs more than it is worth.
 
-**That `p = 0.002` means the opposite of what it looks like.** At 10 training labels the joint
-control sits at 0.811, against 0.922 at 59: training on shuffled labels at every step is
-catastrophic, far worse than not pre-training at all. The +0.113 measures how much damage the
-shuffle does, not how much the real labels add. Read against its control the arm looks like a
-win; read against the baseline it is behind. Which is why both readings are published.
+<!-- source: reports/experiments/budget-10-stageb/summary.md -->
+**That `p = 0.002` means the opposite of what it looks like.** At 10 training labels, over the
+same n = 99 evaluation images, the joint control sits at 0.811, against 0.922 at 59 labels:
+training on shuffled labels at every step is catastrophic, far worse than not pre-training at
+all. The +0.113 measures how much damage the shuffle does, not how much the real labels add.
+Read against its control the arm looks like a win; read against the baseline it is behind.
+Which is why both readings are published.
 
 ### The curve, and what it rules out
 
 <!-- source: reports/figures/MANIFEST.json -->
-![Label-efficiency curve: three arms at four label budgets, and below it the paired difference between the semi-supervised arm and its own control](reports/figures/label_efficiency.png)
+![Label-efficiency curve: three arms at four label budgets, and below it the paired difference between the semi-supervised arm and its own control, n = 99 evaluation images at every budget](reports/figures/label_efficiency.png)
 
-<!-- source: reports/experiments/label_efficiency.parquet -->
+<!-- source: reports/experiments/label_efficiency.csv -->
 | budget | mean fold ROC AUC | semi minus control | paired p | n |
 |---|---|---|---|---|
 | 10 labels | 0.941 | +0.022 [−0.005, +0.051] | 0.12 | 99 |
@@ -131,11 +137,16 @@ still spans zero.
 
 ### Why it comes out that way
 
+<!-- source: reports/experiments/equalized/summary.md -->
 **The clustering was separating images by contrast.** Running the whole protocol again with
-histogram equalisation in front of it lifts the supervised baseline to 0.979 ± 0.028, a paired
-**+0.013 [+0.003, +0.024], p = 0.006**, the only comparison in this project that clears
-conventional significance. It also collapses the clustering's agreement with the labels from
-an ARI of 0.457 ± 0.096 to 0.205 ± 0.179. Remove the global intensity differences and the
+histogram equalisation in front of it lifts the supervised baseline to 0.979 ± 0.028 over
+n = 99 evaluation images.
+
+<!-- source: reports/experiments/equalized/summary.md -->
+Paired over the 25 folds the two runs share, that is **+0.013 [+0.003, +0.024], p = 0.006**
+over n = 99 images — the only comparison in this repository that clears conventional
+significance. Equalisation also collapses the clustering's agreement with the labels, from an
+ARI of 0.457 ± 0.096 to 0.205 ± 0.179. Remove the global intensity differences and the
 structure the clustering was finding goes with them: on this dataset contrast happens to
 correlate with the class, and it is not what a radiologist would be looking at. Equalisation
 stays off by default, and [`docs/architecture.md`](docs/architecture.md) says why.
@@ -152,14 +163,14 @@ would have to annotate before the semi-supervised question even arises.
 ### What else was measured
 
 <!-- source: reports/figures/MANIFEST.json -->
-![Reliability curves per arm, observed cancer rate against mean predicted probability, with the Brier score and the calibration error in the legend](reports/figures/calibration.png)
+![Reliability curves per arm, observed cancer rate against mean predicted probability, with the Brier score and the calibration error in the legend, n = 99 evaluation images pooled out of fold](reports/figures/calibration.png)
 
 **The probability scale is off, and by a lot.** Pooled out of fold, the supervised arm has a
 Brier score of 0.104 and an expected calibration error of 0.101, for a mean predicted score of
 0.407 against a base rate of 0.505. At a predicted 0.18 the observed cancer rate is 0.46; at
 0.44 it is 0.67; at 0.63 it is 0.86. Mid-range scores understate risk by twenty points or
-more. Nothing is recalibrated: a network fine-tuned on twenty images per fold has little
-chance of being calibrated, and measuring the gap is the result.
+more. The scale is published as the network returns it: a calibrator fitted on twenty
+images per fold would mostly fit noise, and the size of the gap is the finding.
 
 **The errors sit on the duplicates.** The 31 evaluation images that also live in the pool are
 misclassified 0.155 of the time, against 0.068 for the other 68. The gap holds for the
@@ -170,7 +181,8 @@ simply harder, and being filed twice in the source folders correlates with being
 validation positives yields 82.0 % realised recall on the test fold and misses the floor on 51
 folds out of 100. It also sits above the F1 threshold on 95 folds out of 100, trading 7 points
 of recall for 2 of precision. On this dataset the F1 threshold is the more sensitive of the
-two, which is the reverse of what a screening frame wants. Both are published side by side.
+two, which is the reverse of what a screening frame wants. Both thresholds and the recall each
+one realised are in `reports/experiments/corrected/per_fold.parquet`, fold by fold.
 
 ## Why these numbers can be believed
 
@@ -182,7 +194,7 @@ checkpoint and threshold are chosen on an inner split that never overlaps the te
 including the one that requires the old protocol to leak.
 
 <!-- source: reports/figures/MANIFEST.json -->
-![What the three leaks were worth: the paired difference between the leaking run and the corrected one, arm by arm, centred on zero](reports/figures/leak_price.png)
+![What the three leaks were worth: the paired difference between the leaking run and the corrected one, arm by arm, centred on zero, n = 99 evaluation images over 25 shared folds](reports/figures/leak_price.png)
 
 Because the same machinery produced a positive answer before. Three leaks and a confound,
 reproduced in `reports/experiments/legacy/` on identical folds, so their price is measured
@@ -214,7 +226,7 @@ holding a `cancer/` and a `normal/` folder and `unlabelled/` holding the rest.
 synchronised drive starves the GPU. The other modes, the budgets and the mechanism arms are in
 [`docs/protocol.md`](docs/protocol.md#reproducing-a-run).
 
-Tests: `uv run python -m pytest` — 167 tests in three tiers, coverage measured on every run
+Tests: `uv run python -m pytest` — 180 tests in three tiers, coverage measured on every run
 with a floor.
 
 ## Structure
@@ -251,7 +263,8 @@ about clustering-derived and self-derived pseudo-labels over ImageNet embeddings
 Self-supervised pre-training on the pool itself was not tried, and it is the one approach with
 a real claim on 1 300 unlabelled images.
 
-**Anything at n = 99.** Twenty images per fold; one image moves recall by 0.05. Every interval
+<!-- source: reports/dataset_summary.json -->
+**Anything at n = 99 evaluation images.** Twenty per fold; one image moves recall by 0.05. Every interval
 above is wide because the data is small, and no protocol fixes that. The headroom measurement
 above is what makes the limit explicit.
 

@@ -148,7 +148,7 @@ def test_a_cache_without_the_backbone_column_is_refused(
 def test_a_matching_cache_is_returned_in_the_order_of_the_records(
     synthetic_dataset: Path, tmp_path: Path
 ) -> None:
-    """Row alignment is with the caller's list, not with the order the file happens to hold."""
+    """The returned rows follow the ids that were asked for, whatever order the cache holds."""
     records, _ = discover_images(synthetic_dataset)
     cache = tmp_path / "features.parquet"
     _write_cache(cache, [r.image_id for r in reversed(records)])

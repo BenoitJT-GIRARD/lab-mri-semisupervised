@@ -94,16 +94,16 @@ def plot_equalization(
 
     fig, axes = plt.subplots(2, 2, figsize=(9, 7))
     axes[0][0].imshow(original, cmap="gray")
-    axes[0][0].set_title("IRM d'origine")
+    axes[0][0].set_title("as the archive ships it")
     axes[0][0].axis("off")
     axes[0][1].imshow(equalized, cmap="gray")
     axes[0][1].set_title("after equalisation")
     axes[0][1].axis("off")
     axes[1][0].hist(original.ravel(), bins=256, range=(0, 255), color=PALETTE["primary"])
-    axes[1][0].set_title("Histogramme d'origine")
+    axes[1][0].set_title("intensity histogram, as shipped")
     axes[1][0].set_xlabel("intensity")
     axes[1][1].hist(equalized.ravel(), bins=256, range=(0, 255), color=PALETTE["secondary"])
-    axes[1][1].set_title("equalised histogram")
+    axes[1][1].set_title("intensity histogram, equalised")
     axes[1][1].set_xlabel("intensity")
     fig.tight_layout()
     return fig
@@ -220,7 +220,9 @@ def plot_roc_compare(
         fpr, tpr, _ = roc_curve(y_true, y_score)
         auc = roc_auc_score(y_true, y_score)
         ax.plot(
-            fpr, tpr, linewidth=1.8,
+            fpr,
+            tpr,
+            linewidth=1.8,
             label=f"{name} (AUC = {auc:.3f})",
             color=(colours or {}).get(name),
         )

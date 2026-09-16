@@ -104,9 +104,7 @@ def build_manifest(
     # An unreadable file has no content identity, so it belongs to no duplicate group: its
     # size is zero, and `Int64` carries that beside the counts without inventing a number.
     counts = manifest["image_id"].value_counts()
-    manifest["duplicate_group_size"] = (
-        manifest["image_id"].map(counts).fillna(0).astype("Int64")
-    )
+    manifest["duplicate_group_size"] = manifest["image_id"].map(counts).fillna(0).astype("Int64")
     return manifest.sort_values(["pool", "path"]).reset_index(drop=True)
 
 
@@ -202,6 +200,9 @@ def summarise(manifest: pd.DataFrame) -> dict[str, object]:
         ),
         "unlabelled_files": len(unlabelled),
         "labelled_also_in_unlabelled": int(leaked["image_id"].nunique()),
+        # The images and the files are two different counts: an evaluation image can sit in
+        # the pool more than once, and the data card publishes both.
+        "labelled_also_in_unlabelled_files": len(leaked),
         "leaked_by_class": (
             labelled[labelled["image_id"].isin(set(leaked["image_id"]))]
             .drop_duplicates("image_id")["label"]

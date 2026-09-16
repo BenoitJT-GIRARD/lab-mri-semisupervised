@@ -32,6 +32,18 @@ def load_result(directory: Path) -> ExperimentResult:
     )
 
 
+def _ran_on(result: ExperimentResult) -> str:
+    """The date of the run, read from its identifier.
+
+    The date of the *rendering* would change every time the page is rebuilt, and a page that
+    changes without its numbers changing is a page nobody can compare.
+    """
+    stamp = result.run_id.rsplit("-", 2)
+    if len(stamp) == 3 and len(stamp[1]) == 8 and stamp[1].isdigit():
+        return f"{stamp[1][:4]}-{stamp[1][4:6]}-{stamp[1][6:]}"
+    return "an undated run"
+
+
 def runs() -> list[Path]:
     """Every run directory under `reports/experiments/` that carries a result."""
     if not EXPERIMENTS_DIR.exists():
@@ -40,6 +52,56 @@ def runs() -> list[Path]:
 
 
 HEADLINE = ("roc_auc", "pr_auc", "recall_positive", "f1_macro", "accuracy")
+
+#: The run every other run is a variant of: same folds, same seeds, no preprocessing change
+#: and the full label budget. A number that compares two runs has to live somewhere a reader
+#: can open, and the summary of the variant is where it belongs.
+REFERENCE = "corrected"
+
+
+#: The two runs whose arms the README publishes side by side: the four arms of the corrected
+#: protocol, and the four the stage-B run adds. Every arm appears in exactly one of them.
+PUBLISHED_RUNS = ("corrected", "corrected-stageb")
+
+
+def published_arms() -> pd.DataFrame:
+    """The eight arms of the headline table, each with the run it was measured in.
+
+    The table crosses two runs, so no single run's `summary.md` carries it, and a README
+    table with no artefact behind it is a table nobody can check. This writes the artefact.
+    """
+    rows = []
+    for name in PUBLISHED_RUNS:
+        directory = EXPERIMENTS_DIR / name
+        if not (directory / "per_fold.parquet").exists():
+            continue
+        result = load_result(directory)
+        meta = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+        for arm, values in result.per_fold.groupby("arm")["roc_auc"]:
+            rows.append(
+                {
+                    "arm": arm,
+                    "run": name,
+                    "mean_roc_auc": round(float(values.mean()), 6),
+                    "sd_across_folds": round(float(values.std()), 6),
+                    "folds": int(values.count()),
+                    "evaluation_images": int(meta.get("evaluation_images", 0)),
+                }
+            )
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    # An arm measured in both runs is published from the one that introduced it.
+    frame = frame.drop_duplicates(subset="arm", keep="first")
+    return frame.sort_values("mean_roc_auc", ascending=False).reset_index(drop=True)
+
+
+def _reference_per_fold(result) -> pd.DataFrame | None:
+    """The per-fold table of the reference run, when this run is a variant of it."""
+    if result.mode == REFERENCE:
+        return None
+    path = result.directory.parent / REFERENCE / "per_fold.parquet"
+    return pd.read_parquet(path) if path.exists() else None
 
 
 def summarise(result, n_bootstrap: int = 2000) -> str:
@@ -55,7 +117,7 @@ def summarise(result, n_bootstrap: int = 2000) -> str:
     lines = [
         f"# {result.run_id}",
         "",
-        "Written by `scripts/rebuild_summaries.py` from the artefacts of this run.",
+        f"Written by `scripts/rebuild_summaries.py` from the artefacts of the run of {_ran_on(result)}.",
         "",
         f"Protocol: **{result.mode}**",
         "",
@@ -125,6 +187,32 @@ def summarise(result, n_bootstrap: int = 2000) -> str:
                 f"| {a} vs {b} | {metric} | {out['mean_difference']:+.3f} "
                 f"| [{out['ci_low']:+.3f}, {out['ci_high']:+.3f}] | {out['p_value']:.3f} |"
             )
+
+    reference = _reference_per_fold(result)
+    if reference is not None:
+        here = result.per_fold.pivot(index="fold", columns="arm", values="roc_auc")
+        there = reference.pivot(index="fold", columns="arm", values="roc_auc")
+        shared_folds = here.index.intersection(there.index)
+        shared_arms = [arm for arm in here.columns if arm in there.columns]
+        if len(shared_folds) and shared_arms:
+            lines += [
+                "",
+                f"## Against the `{REFERENCE}` run, paired over the "
+                f"{len(shared_folds)} shared folds",
+                "",
+                f"| arm | this run | {REFERENCE} | difference | 95% CI | p |",
+                "|---|---|---|---|---|---|",
+            ]
+            for arm in shared_arms:
+                a = here.loc[shared_folds, arm].to_numpy()
+                b = there.loc[shared_folds, arm].to_numpy()
+                out = paired_difference(a, b, n_boot=n_bootstrap)
+                lines.append(
+                    f"| {arm} | {a.mean():.3f} | {b.mean():.3f} "
+                    f"| {out['mean_difference']:+.3f} "
+                    f"| [{out['ci_low']:+.3f}, {out['ci_high']:+.3f}] "
+                    f"| {out['p_value']:.3f} |"
+                )
 
     if "pseudo_method" in result.folds_meta:
         chosen = result.folds_meta["pseudo_method"].value_counts()

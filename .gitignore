@@ -46,7 +46,8 @@ ehthumbs.db
 .coverage
 .coverage.*
 htmlcov/
-coverage.xml
+# The coverage report under reports/ is published: it is what the badge recomputes from.
+/coverage.xml
 .tox/
 .nox/
 .hypothesis/

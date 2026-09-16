@@ -108,7 +108,7 @@ class ArmResult:
     confidence_quantile: float | None = None
     #: Pseudo-labels actually pre-trained on, after filtering.
     n_pseudo_used: int = 0
-    #: Weight on the pseudo-label loss, for the joint arms only.
+    #: How hard the pseudo-label loss pulled. ``None`` for every arm that trains in phases.
     pseudo_weight: float | None = None
     #: Pool images whose own prediction was confident enough to be reused, for the
     #: self-training arms only.

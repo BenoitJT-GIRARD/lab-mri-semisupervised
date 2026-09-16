@@ -2,8 +2,8 @@
 
 Two ideas carry the module.
 
-**Repeated cross-validation.** With 99 evaluation images, one fold holds twenty. A recall
-that moves by 0.05 has moved by one image. Repeating the whole cross-validation under
+**Repeated cross-validation.** With 99 evaluation images, one fold holds twenty, so a
+single scan is worth five points of recall. Repeating the whole cross-validation under
 different splitting seeds separates the variance that comes from *where the split fell*
 from the variance that comes from *how the network initialised* — and it is the only way to
 say anything honest about an effect of that size.

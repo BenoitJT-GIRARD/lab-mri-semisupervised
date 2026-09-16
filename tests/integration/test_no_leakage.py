@@ -258,7 +258,7 @@ def test_no_implemented_arm_can_be_written_and_then_never_run() -> None:
 
     Caught in the act on 2026-09-03: a fourth arm was added to ARMS and not to the config,
     so the experiment ran three arms while every test passed. An arm may legitimately be
-    opt-in — the joint arms answer a separate question and cost a run of their own — but it
+    opt-in — the joint arms are a second experiment, with a budget of their own — but it
     has to say so by being listed, not by being forgotten.
     """
     from mri_semisupervised.config import ProtocolConfig

@@ -215,7 +215,10 @@ def summarise_dataset(records: list[ImageRecord]) -> dict[str, object]:
         "by_split": df.groupby("split", dropna=False).size().to_dict(),
         "by_label": df.groupby("label_name", dropna=False).size().to_dict(),
         "modes": df["mode"].value_counts().to_dict(),
-        "resolutions": df.groupby(["width", "height"]).size().sort_values(ascending=False).to_dict(),
+        "resolutions": df.groupby(["width", "height"])
+        .size()
+        .sort_values(ascending=False)
+        .to_dict(),
     }
     return summary
 
