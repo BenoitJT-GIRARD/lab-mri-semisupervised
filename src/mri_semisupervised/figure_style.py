@@ -213,6 +213,22 @@ def diverging_cmap() -> LinearSegmentedColormap:
 # ---------------------------------------------------------------------------
 
 
+def _title_of(ax: Any) -> str:
+    """The title as it was set, wherever the style put it.
+
+    ``set_title`` honours ``axes.titlelocation``, and this style left-aligns titles, so the
+    text goes into the left slot. ``get_title()`` reads the centre slot and answers with an
+    empty string: the manifest of a figure that carries a title would record none.
+    """
+    import matplotlib as mpl
+
+    for loc in (mpl.rcParams.get("axes.titlelocation", "center"), "center", "left", "right"):
+        title = ax.get_title(loc=loc)
+        if title.strip():
+            return title
+    return ""
+
+
 def _axes_carrying_data(fig: Any) -> list[Any]:
     return [ax for ax in fig.axes if ax.has_data() and ax.get_label() != "<colorbar>"]
 
@@ -332,7 +348,7 @@ def save_figure(
             "dispersion": dispersion,
             "source": source,
             "axes": [
-                {"x": ax.get_xlabel(), "y": ax.get_ylabel(), "title": ax.get_title()}
+                {"x": ax.get_xlabel(), "y": ax.get_ylabel(), "title": _title_of(ax)}
                 for ax in _axes_carrying_data(fig)
             ],
             "dpi": DPI,
