@@ -1,5 +1,7 @@
 # corrected-20260904-001811
 
+Written by `scripts/rebuild_summaries.py` from the artefacts of this run.
+
 Protocol: **corrected**
 
 - dataset fingerprint: `8f22a69ffa46ca1f`

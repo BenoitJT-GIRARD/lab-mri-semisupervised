@@ -1,5 +1,7 @@
 # legacy-20260903-120310
 
+Written by `scripts/rebuild_summaries.py` from the artefacts of this run.
+
 Protocol: **legacy**
 
 - dataset fingerprint: `8f22a69ffa46ca1f`

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="103" height="20" role="img" aria-label="coverage 68%">
+  <title>coverage 68%</title>
+  <rect width="103" height="20" rx="3" fill="#123F5A"/>
+  <rect width="67" height="20" rx="3" fill="#5B646D"/>
+  <rect x="64" width="3" height="20" fill="#5B646D"/>
+  <g fill="#FFFFFF" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="11">
+    <text x="33" y="14" text-anchor="middle">coverage</text>
+    <text x="85" y="14" text-anchor="middle">68%</text>
+  </g>
+</svg>

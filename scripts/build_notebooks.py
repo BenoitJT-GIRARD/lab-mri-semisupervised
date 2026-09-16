@@ -18,16 +18,14 @@ from pathlib import Path
 
 import nbformat as nbf
 
-ROOT = Path(__file__).resolve().parents[1]
+from mri_semisupervised.config import PROJECT_ROOT as ROOT
+
 NOTEBOOKS_DIR = ROOT / "notebooks"
 
+# The notebooks take the root from the package too: `scripts/run_notebooks.py` runs them from
+# the repository root, and a cell that recomputed it from the current directory would answer
+# differently depending on where the kernel was started.
 PREAMBLE = """
-import sys
-from pathlib import Path
-
-ROOT = Path.cwd().parent if Path.cwd().name == "notebooks" else Path.cwd()
-sys.path.insert(0, str(ROOT / "src"))
-
 import numpy as np
 import pandas as pd
 

@@ -1,5 +1,7 @@
 # equalized-20260903-225735
 
+Written by `scripts/rebuild_summaries.py` from the artefacts of this run.
+
 Protocol: **equalized**
 
 - dataset fingerprint: `8f22a69ffa46ca1f`

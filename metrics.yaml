@@ -1,0 +1,102 @@
+# What the published numbers mean.
+#
+# Every numeric column of every table in the README, and every axis of every figure, is a key
+# here. A label alone — `ROC AUC`, `± 0.035` — leaves the reader to guess what was measured,
+# over what, and whether larger is better. Two quantities in this repository are both called
+# ROC AUC and differ by a point or two; they have separate entries for that reason.
+
+metrics:
+
+  mean_fold_roc_auc:
+    definition: >-
+      The ROC AUC of each of the 25 folds, averaged. Each fold's value is computed on the
+      images that fold held out, so the mean is an average of 25 small evaluations.
+    unit: "score, 0 to 1"
+    direction: higher_is_better
+    anchor: "0.966 — reports/experiments/corrected/summary.md, arm `supervised`"
+    business_reading: >-
+      How well the classifier separates cancer from normal on unseen scans, on average over
+      the folds. At 0.966 it ranks a random cancer scan above a random normal one in about
+      nineteen cases out of twenty.
+    source: "scripts/run_experiment.py, per_fold.parquet, column roc_auc"
+    uncertainty: >-
+      Reported with the standard deviation across folds, which is what `sd_across_folds`
+      carries. Comparisons between arms are paired across the same folds and read through
+      `semi_minus_control`, never by subtracting two means.
+
+  sd_across_folds:
+    definition: >-
+      The standard deviation of an arm's 25 fold values. It measures how much the answer
+      moves when the same protocol meets another split of the same 99 images.
+    unit: "score points, same scale as the metric"
+    direction: lower_is_better
+    anchor: "0.035 — reports/experiments/corrected/summary.md, arm `supervised`"
+    business_reading: >-
+      The width of the noise a reader has to see through. At 0.035 against 0.034 of remaining
+      headroom, an improvement smaller than the spread is not visible on this dataset.
+    source: "scripts/run_experiment.py, per_fold.parquet, standard deviation over folds"
+    uncertainty: >-
+      A spread, not an estimate of one: it is computed over the 25 folds themselves, and no
+      interval is quoted on it.
+
+  pooled_roc_auc:
+    definition: >-
+      One ROC AUC computed over every out-of-fold score at once, all folds pooled into a
+      single ranking.
+    unit: "score, 0 to 1"
+    direction: higher_is_better
+    anchor: "0.948 — reports/experiments/corrected/summary.md, pooled table, arm `supervised`"
+    business_reading: >-
+      What the classifier is worth when its scores from different folds have to be compared
+      with each other, which is what happens the day a single threshold is deployed. It reads
+      lower than the fold average because folds are calibrated differently.
+    source: "scripts/run_experiment.py, predictions.parquet, pooled over folds"
+    uncertainty: >-
+      Bootstrap over images, 2 000 resamples, reported as a 95 % interval in the run summary.
+
+  semi_minus_control:
+    definition: >-
+      The paired difference in mean fold ROC AUC between an arm and the control that sees the
+      same images with shuffled labels, computed fold by fold and then averaged.
+    unit: "score points"
+    direction: higher_is_better
+    anchor: "+0.006 — reports/experiments/label_efficiency.parquet, 59 labels"
+    business_reading: >-
+      What the pseudo-labels are worth once the effect of simply seeing more images is
+      removed. Zero means the unlabelled pool bought nothing that exposure alone would not.
+    source: "scripts/build_figures.py, mri_semisupervised.protocol.uncertainty.paired_difference"
+    uncertainty: >-
+      95 % bootstrap interval on the paired difference, 2 000 resamples over folds. An
+      interval spanning zero is reported as such and claimed as nothing.
+
+  paired_p:
+    definition: >-
+      The two-sided p value of the paired difference above, from the same bootstrap: the share
+      of resamples whose difference falls on the other side of zero, doubled.
+    unit: "probability, 0 to 1"
+    direction: lower_is_better
+    anchor: "0.008 — reports/experiments/mechanisms.parquet, joint training at 59 labels"
+    business_reading: >-
+      Whether a difference survives the size of the dataset. Above 0.05 the two arms are
+      indistinguishable on 25 folds, however different their averages look.
+    source: "mri_semisupervised.protocol.uncertainty.paired_difference"
+    uncertainty: >-
+      Holm correction is applied over each family of comparisons this project ran, and the
+      corrected reading is the one the README states.
+
+  ari:
+    definition: >-
+      Adjusted Rand index between the clustering of a training fold and the true labels of
+      that fold: how much of the label structure the clustering recovered, corrected for
+      chance.
+    unit: "index, 0 is chance and 1 is identical"
+    direction: higher_is_better
+    anchor: "0.457 — reports/experiments/corrected/summary.md, ARI on the training labels"
+    business_reading: >-
+      Whether the unlabelled pool has any structure worth borrowing. At 0.457 it has some;
+      after histogram equalisation it drops to 0.205, which is how the contrast confound was
+      found.
+    source: "scripts/run_experiment.py, folds.parquet, column pseudo_ari_on_train"
+    uncertainty: >-
+      Reported with its standard deviation across folds. Under the leaked protocol the same
+      quantity read 0.481 ± 0.000, and the absent spread was the tell.

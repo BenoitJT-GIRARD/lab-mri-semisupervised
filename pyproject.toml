@@ -141,7 +141,7 @@ omit = ["*/figure_style.py", "scripts/run_notebooks.py"]
 [tool.coverage.report]
 # The floor is the rate measured the day the three tiers were completed, rounded down. A
 # floor below the current rate lets the next commit lose coverage in silence.
-fail_under = 10
+fail_under = 66
 show_missing = true
 skip_covered = true
 exclude_lines = [

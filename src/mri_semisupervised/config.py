@@ -17,7 +17,19 @@ from pathlib import Path
 
 
 def _project_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    """The repository root, FOUND and not counted.
+
+    Counting directories up from this file only works from an editable checkout: installed
+    as a wheel the package lands in site-packages, and every path below would point there.
+    The marker is the file that defines the project.
+    """
+    here = Path(__file__).resolve()
+    for candidate in here.parents:
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+    # Installed outside a checkout: the working directory is the only defensible guess, and
+    # it keeps what a run writes where the person running it is working.
+    return Path.cwd().resolve()
 
 
 PROJECT_ROOT: Path = _project_root()

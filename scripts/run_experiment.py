@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 # Windows consoles default to cp1252, which cannot print the report.
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -49,6 +50,18 @@ def main() -> None:
         default=None,
         help="output directory name under reports/experiments/, if not the default",
     )
+    parser.add_argument(
+        "--output-root",
+        default=None,
+        type=Path,
+        help="write the run somewhere other than reports/experiments/ (a trial run, a test)",
+    )
+    parser.add_argument(
+        "--image-size",
+        type=int,
+        default=None,
+        help="resize images to this side before the network; the published runs use 224",
+    )
     args = parser.parse_args()
 
     ensure_dirs()
@@ -69,6 +82,8 @@ def main() -> None:
     training = TrainingConfig(equalize=args.mode == EQUALIZED)
     if args.epochs_strong:
         training = TrainingConfig(**{**training.__dict__, "epochs_strong": args.epochs_strong})
+    if args.image_size:
+        training = TrainingConfig(**{**training.__dict__, "image_size": args.image_size})
 
     print(
         f"[info] mode={args.mode} folds={protocol.n_splits} "
@@ -76,7 +91,11 @@ def main() -> None:
         f"arms={len(protocol.arms)}"
     )
     result = run_experiment(
-        mode=args.mode, protocol=protocol, training=training, run_name=args.out_name
+        mode=args.mode,
+        protocol=protocol,
+        training=training,
+        run_name=args.out_name,
+        output_root=args.output_root,
     )
 
     summary = summarise(result, n_bootstrap=protocol.n_bootstrap)
