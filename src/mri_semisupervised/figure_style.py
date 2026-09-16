@@ -34,7 +34,7 @@ import contextlib
 import hashlib
 import json
 from collections.abc import Iterable, Mapping, Sequence
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -338,7 +338,7 @@ def save_figure(
             "dpi": DPI,
             "style_version": STYLE_VERSION,
             "sha256": digest,
-            "written": date.today().isoformat(),
+            "written": datetime.now(tz=UTC).date().isoformat(),
         },
     )
     return target
@@ -381,7 +381,7 @@ def save_svg(
             "dpi": None,
             "style_version": STYLE_VERSION,
             "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
-            "written": date.today().isoformat(),
+            "written": datetime.now(tz=UTC).date().isoformat(),
         },
     )
     return target
