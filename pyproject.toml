@@ -127,15 +127,19 @@ markers = [
     "simulation: replays a complete scenario on frozen data, with no real service",
     "slow: takes long enough that a reader deserves to be told before running it",
 ]
-# Warnings are errors (ADR 0028).
+# Warnings are errors.
 filterwarnings = ["error"]
 
 [tool.coverage.run]
+# Without this, the published XML report writes the absolute root of the measured sources:
+# a reader finds the directory tree of the machine that ran the suite, and two runs on two
+# machines produce two different files for the same numbers.
+relative_files = true
 source = ["src/mri_semisupervised", "scripts"]
 branch = true
 data_file = "var/.coverage"
-# Vendored copies of portfolio tooling, identical in every repository and tested where they
-# are written: counting them here would measure someone else's tests.
+# Copied in rather than imported, so a clone needs nothing extra to install, and tested at
+# their source. Measuring them here would report someone else's coverage as this project's.
 omit = ["*/figure_style.py", "scripts/run_notebooks.py", "scripts/smoke.py"]
 
 [tool.coverage.report]
