@@ -1,7 +1,7 @@
 {
   "command": "uv run python scripts/smoke.py",
   "ran_at": "2026-09-15",
-  "git_revision": "c9f5b45f3391b558e2506fb85f63d68426f47f22",
+  "git_revision": "d723cec5ac137d3b95c2e7e3be9f791da5a84261",
   "tool_versions": {
     "python": "3.12.12",
     "torch": "2.11.0+cu126",
@@ -12,7 +12,7 @@
     "uv": "uv 0.11.6 (65950801c 2026-04-09 x86_64-pc-windows-msvc)",
     "docker": "Docker version 29.2.0, build 0b9d198"
   },
-  "duration_seconds": 53.3,
+  "duration_seconds": 58.7,
   "key_output": [
     "reports/figures/arms_comparison.png",
     "reports/figures/calibration.png",
