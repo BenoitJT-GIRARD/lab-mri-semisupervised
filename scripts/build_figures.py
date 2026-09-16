@@ -21,6 +21,7 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from mri_semisupervised.config import (
@@ -33,6 +34,7 @@ from mri_semisupervised.figure_style import (
     PALETTE,
     apply_style,
     close,
+    distribution,
     reference_line,
     save_figure,
     series_colours,
@@ -141,34 +143,33 @@ def figure_roc(predictions: pd.DataFrame, meta: dict, path: Path) -> None:
 
 
 def figure_arms(per_fold: pd.DataFrame, meta: dict, path: Path) -> None:
-    """Per-arm means with the spread across folds, on the metrics that matter."""
+    """Every fold as a point, the arm mean as a rule, and its standard error.
+
+    Four means drawn as four bars were the same picture whatever the folds had done: the
+    twenty-five values behind each bar decide whether a gap of 0.02 means anything, and they
+    are what the reader is shown first. A bar would also have to start at zero, which on a
+    ROC AUC leaves the whole comparison in the top tenth of the panel.
+    """
     metrics = ["roc_auc", "pr_auc", "recall_positive", "f1_macro"]
     arms = _present(per_fold)
+    positions = list(range(len(arms)))
 
     figure, axes = plt.subplots(1, len(metrics), figsize=(4 * len(metrics), 3.8))
     for axis, metric in zip(axes, metrics, strict=True):
-        means = [per_fold.loc[per_fold["arm"] == a, metric].mean() for a in arms]
-        errors = [per_fold.loc[per_fold["arm"] == a, metric].std() for a in arms]
-        axis.bar(
-            range(len(arms)),
-            means,
-            yerr=errors,
-            capsize=5,
-            color=[ARM_COLOUR[a] for a in arms],
-        )
-        axis.set_xticks(range(len(arms)))
+        groups = [per_fold.loc[per_fold["arm"] == a, metric].to_numpy() for a in arms]
+        distribution(axis, positions, groups, colours=[ARM_COLOUR[a] for a in arms], width=0.5)
+        axis.set_xticks(positions)
         axis.set_xticklabels([ARM_LABEL[a] for a in arms], rotation=20, ha="right")
         axis.set_xlabel("arm")
         axis.set_ylabel(METRIC_LABEL[metric])
         axis.set_title(METRIC_LABEL[metric])
-        axis.set_ylim(0.5, 1.0)
     figure.suptitle(f"{len(arms)} arms, same folds, same label budget")
     figure.tight_layout()
     save_figure(
         figure,
         path,
         n=_population(meta),
-        dispersion="±1 standard deviation across folds",
+        dispersion="one point per fold; rule: the mean; bar: ±1 standard error of the mean",
         source=SOURCE,
     )
     close(figure)
@@ -183,9 +184,11 @@ def _difference_panels(
     The shared scale is the point: three panels with three scales invite the eye to compare
     lengths that are not comparable.
     """
+    extremes = [abs(float(v)) for serie in frame["values_per_fold"] for v in serie]
     span = max(
         abs(float(frame["ci_low"].min())),
         abs(float(frame["ci_high"].max())),
+        max(extremes, default=0.0),
     )
     figure, axes = plt.subplots(1, len(metrics), figsize=(4.4 * len(metrics), 3.6), sharey=True)
     axes = [axes] if len(metrics) == 1 else list(axes)
@@ -194,7 +197,19 @@ def _difference_panels(
         positions = range(len(subset))
         # One call per row: a single errorbar call paints every row in one colour, and the
         # control ended up in the colour of the treatment above it.
+        scatterer = np.random.default_rng(20260916)
         for position, row in zip(positions, subset.itertuples(), strict=True):
+            # Every fold first: the interval summarises a sample the reader can see.
+            folds = np.asarray(row.values_per_fold, dtype=float)
+            axis.scatter(
+                folds,
+                position + scatterer.uniform(-0.14, 0.14, size=folds.size),
+                s=13,
+                color=row.colour,
+                alpha=0.45,
+                linewidths=0,
+                zorder=2,
+            )
             axis.errorbar(
                 [row.mean_difference],
                 [position],
@@ -202,6 +217,7 @@ def _difference_panels(
                 fmt="o",
                 color=row.colour,
                 capsize=4,
+                zorder=3,
             )
         reference_line(axis, x=0.0)
         axis.set_yticks(list(positions))
@@ -230,12 +246,14 @@ def figure_paired(per_fold: pd.DataFrame, meta: dict, path: Path) -> None:
         for a, b in pairs:
             if (metric, a) not in pivot or (metric, b) not in pivot:
                 continue
-            out = paired_difference(pivot[(metric, a)].to_numpy(), pivot[(metric, b)].to_numpy())
+            left, right = pivot[(metric, a)].to_numpy(), pivot[(metric, b)].to_numpy()
+            out = paired_difference(left, right)
             rows.append(
                 {
                     "label": f"{ARM_LABEL[a]}\nminus {ARM_LABEL[b]}",
                     "metric": metric,
                     "colour": ARM_COLOUR[a],
+                    "values_per_fold": left - right,
                     **out,
                 }
             )
@@ -250,7 +268,7 @@ def figure_paired(per_fold: pd.DataFrame, meta: dict, path: Path) -> None:
         figure,
         path,
         n=_population(meta),
-        dispersion="95 % bootstrap interval on the paired difference",
+        dispersion="one point per fold; interval: 95 % bootstrap on the mean difference",
         source=SOURCE,
     )
     close(figure)
@@ -281,14 +299,15 @@ def figure_leak_price(
             )
             if pair.empty:
                 continue
-            out = paired_difference(
-                pair[f"{metric}_legacy"].to_numpy(), pair[f"{metric}_corrected"].to_numpy()
-            )
+            leaking = pair[f"{metric}_legacy"].to_numpy()
+            corrected_values = pair[f"{metric}_corrected"].to_numpy()
+            out = paired_difference(leaking, corrected_values)
             rows.append(
                 {
                     "label": ARM_LABEL[arm],
                     "metric": metric,
                     "colour": ARM_COLOUR[arm],
+                    "values_per_fold": leaking - corrected_values,
                     **out,
                 }
             )
@@ -304,7 +323,7 @@ def figure_leak_price(
         figure,
         path,
         n=_population(meta),
-        dispersion="95 % bootstrap interval on the paired difference",
+        dispersion="one point per fold; interval: 95 % bootstrap on the mean difference",
         source=SOURCE,
     )
     close(figure)
@@ -379,18 +398,19 @@ def figure_label_efficiency(path: Path) -> pd.DataFrame | None:
                     "budget": budget,
                     "arm": arm,
                     "mean": float(pivot[arm].mean()),
-                    "sd": float(pivot[arm].std()),
+                    "sem": float(pivot[arm].std(ddof=1) / len(pivot.index) ** 0.5),
                     **population,
                 }
             )
         if {"semi_supervised", "permuted_control"} <= set(pivot.columns):
-            out = paired_difference(
-                pivot["semi_supervised"].to_numpy(), pivot["permuted_control"].to_numpy()
-            )
+            treated = pivot["semi_supervised"].to_numpy()
+            untreated = pivot["permuted_control"].to_numpy()
+            out = paired_difference(treated, untreated)
             rows.append(
                 {
                     "budget": budget,
                     "arm": "difference",
+                    "values_per_fold": treated - untreated,
                     "mean": out["mean_difference"],
                     "ci_low": out["ci_low"],
                     "ci_high": out["ci_high"],
@@ -404,21 +424,28 @@ def figure_label_efficiency(path: Path) -> pd.DataFrame | None:
         2, 1, figsize=(7, 7.5), sharex=True, gridspec_kw={"height_ratios": [2, 1]}
     )
     drawn = ("supervised", "semi_supervised", "permuted_control")
-    # A small horizontal offset per arm: at ten and twenty labels the three error bars sat
-    # on the same x and covered each other entirely.
-    offsets = {arm: (index - 1) * 0.9 for index, arm in enumerate(drawn)}
+    # A band rather than caps: three sets of error bars at the same budget covered each
+    # other entirely, and a band says the same thing without asking for an offset that
+    # moves a point away from the budget it was measured at.
     for arm in drawn:
         part = frame[frame["arm"] == arm].sort_values("budget")
         if part.empty:
             continue
-        top.errorbar(
-            part["budget"] + offsets[arm],
+        colour = ARM_COLOUR.get(arm)
+        top.plot(
+            part["budget"],
             part["mean"],
-            yerr=part["sd"],
             marker="o",
-            capsize=3,
-            color=ARM_COLOUR.get(arm),
+            color=colour,
             label=ARM_LABEL.get(arm, arm),
+        )
+        top.fill_between(
+            part["budget"],
+            part["mean"] - part["sem"],
+            part["mean"] + part["sem"],
+            color=colour,
+            alpha=0.18,
+            linewidth=0,
         )
     top.set_xlabel("training labels per fold")
     top.set_ylabel(METRIC_LABEL["roc_auc"])
@@ -427,6 +454,18 @@ def figure_label_efficiency(path: Path) -> pd.DataFrame | None:
 
     diff = frame[frame["arm"] == "difference"].sort_values("budget")
     reference_line(bottom, y=0.0)
+    scatterer = np.random.default_rng(20260916)
+    for row in diff.itertuples():
+        folds = np.asarray(row.values_per_fold, dtype=float)
+        bottom.scatter(
+            row.budget + scatterer.uniform(-1.1, 1.1, size=folds.size),
+            folds,
+            s=11,
+            color=ARM_COLOUR["semi_supervised"],
+            alpha=0.35,
+            linewidths=0,
+            zorder=2,
+        )
     bottom.errorbar(
         diff["budget"],
         diff["mean"],
@@ -434,6 +473,7 @@ def figure_label_efficiency(path: Path) -> pd.DataFrame | None:
         marker="o",
         capsize=3,
         color=ARM_COLOUR["semi_supervised"],
+        zorder=3,
     )
     bottom.set_xlabel("training labels per fold")
     bottom.set_ylabel("semi-supervised minus\npermuted control")
@@ -443,7 +483,10 @@ def figure_label_efficiency(path: Path) -> pd.DataFrame | None:
         figure,
         path,
         n={"evaluation images": 99, "folds": 25, "budgets": len(points)},
-        dispersion="top: ±1 SD across folds; bottom: 95 % bootstrap interval",
+        dispersion=(
+            "top: band is ±1 standard error of the mean across folds; "
+            "bottom: one point per fold, interval 95 % bootstrap on the mean difference"
+        ),
         source=SOURCE,
     )
     close(figure)
@@ -473,9 +516,11 @@ def figure_mechanisms(path: Path) -> pd.DataFrame | None:
         for arm, control in MECHANISMS.items():
             if not {arm, control} <= set(pivot.columns):
                 continue
-            out = paired_difference(pivot[arm].to_numpy(), pivot[control].to_numpy())
+            treated, untreated = pivot[arm].to_numpy(), pivot[control].to_numpy()
+            out = paired_difference(treated, untreated)
             rows.append(
                 {
+                    "values_per_fold": treated - untreated,
                     "budget": budget,
                     "arm": arm,
                     "control": control,
@@ -496,7 +541,19 @@ def figure_mechanisms(path: Path) -> pd.DataFrame | None:
     figure, axis = plt.subplots(figsize=(7, 4.5))
     reference_line(axis, x=0.0)
     labels = []
+    scatterer = np.random.default_rng(20260916)
     for position, row in enumerate(frame.itertuples()):
+        # Every fold first: the interval summarises a sample the reader can see.
+        folds = np.asarray(row.values_per_fold, dtype=float)
+        axis.scatter(
+            folds,
+            position + scatterer.uniform(-0.14, 0.14, size=folds.size),
+            s=13,
+            color=ARM_COLOUR.get(row.arm),
+            alpha=0.45,
+            linewidths=0,
+            zorder=2,
+        )
         axis.errorbar(
             row.difference,
             position,
@@ -504,6 +561,7 @@ def figure_mechanisms(path: Path) -> pd.DataFrame | None:
             fmt="o",
             capsize=4,
             color=ARM_COLOUR.get(row.arm),
+            zorder=3,
         )
         labels.append(f"{ARM_LABEL.get(row.arm, row.arm)} — {row.budget} labels")
     axis.set_yticks(range(len(frame)))
@@ -521,7 +579,7 @@ def figure_mechanisms(path: Path) -> pd.DataFrame | None:
             "folds": int(frame["folds"].max()),
             "comparisons": len(frame),
         },
-        dispersion="95 % bootstrap interval on the paired difference",
+        dispersion="one point per fold; interval: 95 % bootstrap on the mean difference",
         source=SOURCE,
     )
     close(figure)
@@ -668,15 +726,18 @@ def main() -> None:
     curve = figure_label_efficiency(FIGURES_DIR / "label_efficiency.png")
     if curve is not None:
         curve_path = EXPERIMENTS_DIR / "label_efficiency.csv"
-        curve.to_csv(curve_path, index=False, lineterminator="\n")
+        # The per-fold vector is what the lower panel draws; the table publishes its summary.
+        curve.drop(columns=["values_per_fold"]).to_csv(curve_path, index=False, lineterminator="\n")
         print(f"[ok] {curve_path.name}")
 
     mechanisms = figure_mechanisms(FIGURES_DIR / "mechanisms.png")
     if mechanisms is not None:
         mechanisms_path = EXPERIMENTS_DIR / "mechanisms.csv"
-        mechanisms.to_csv(mechanisms_path, index=False, lineterminator="\n")
+        # The per-fold vector is what the figure draws; the table publishes the summary of it.
+        published = mechanisms.drop(columns=["values_per_fold"])
+        published.to_csv(mechanisms_path, index=False, lineterminator="\n")
         print(f"[ok] {mechanisms_path.name}")
-        print(mechanisms.round(4).to_string(index=False))
+        print(published.round(4).to_string(index=False))
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-# Figure style v1 — generated 2026-09-15. Copy: edit the source, not this file.
+# Figure style v1 — generated 2026-09-16. Copy: edit the source, not this file.
 
 """Figure style: one palette, one writer, and a refusal to publish an unreadable figure.
 
@@ -169,6 +169,172 @@ def series_colours(
             colours[name] = SERIES[slot]
             slot += 1
     return colours
+
+
+#: Below this many values a cloud of points reads as noise rather than as a distribution.
+DOTS_NEED = 6
+
+
+def distribution(
+    ax: Any,
+    positions: Sequence[float],
+    groups: Sequence[Sequence[float]],
+    *,
+    orient: str = "v",
+    colours: Sequence[str] | None = None,
+    width: float = 0.62,
+    jitter: float = 0.16,
+    seed: int = 20260916,
+    dot_size: float = 15.0,
+    dot_alpha: float = 0.55,
+    label: str | None = None,
+) -> dict[str, list[float]]:
+    """Every individual as a point, the mean as a rule, and the standard error around it.
+
+    A mean drawn alone hides the sample it came from: two groups with the same mean and
+    opposite spreads become the same picture. Here every value is drawn, and the reader can
+    see the sample before reading the summary of it.
+
+    Above ``DOTS_NEED`` values the mean is a short horizontal rule and nothing is filled: the
+    points carry the comparison, so the axis is free to start where the data does. Below it,
+    four points read as noise rather than as a distribution, so the mean becomes a bar from
+    zero — the bar is what makes the comparison legible — and the points sit on top of it, so
+    that no individual is hidden by the summary.
+
+    The error bar is the **standard error of the mean**, which is what a reader comparing two
+    means needs. A standard deviation describes the sample, not the precision of its mean;
+    when that is the intended message, draw it yourself and name it.
+
+    The jitter comes from a seeded generator, so the same values give the same picture. A
+    figure that moved on every regeneration could not be compared with the one it replaces.
+    """
+
+    import numpy as np
+
+    if orient not in {"v", "h"}:
+        raise ValueError("orient is 'v' or 'h'")
+    if len(positions) != len(groups):
+        raise ValueError(f"{len(positions)} positions for {len(groups)} groups")
+
+    scatterer = np.random.default_rng(seed)
+    means: list[float] = []
+    sems: list[float] = []
+    counts: list[int] = []
+
+    for index, (centre, values) in enumerate(zip(positions, groups, strict=True)):
+        sample = np.asarray(list(values), dtype=float)
+        sample = sample[~np.isnan(sample)]
+        n = int(sample.size)
+        counts.append(n)
+        if n == 0:
+            means.append(float("nan"))
+            sems.append(float("nan"))
+            continue
+        mean = float(sample.mean())
+        sem = float(sample.std(ddof=1) / np.sqrt(n)) if n > 1 else 0.0
+        means.append(mean)
+        sems.append(sem)
+
+        colour = colours[index] if colours is not None else SERIES[index % len(SERIES)]
+        spread = centre + scatterer.uniform(-jitter, jitter, size=n)
+        first = label if index == 0 else None
+
+        if n >= DOTS_NEED:
+            left, right = centre - width / 2, centre + width / 2
+            if orient == "v":
+                ax.scatter(
+                    spread,
+                    sample,
+                    s=dot_size,
+                    color=colour,
+                    alpha=dot_alpha,
+                    linewidths=0,
+                    zorder=2,
+                )
+                ax.hlines(mean, left, right, color=colour, linewidth=2.2, zorder=3)
+                if sem:
+                    ax.errorbar(
+                        centre,
+                        mean,
+                        yerr=sem,
+                        fmt="none",
+                        ecolor=colour,
+                        elinewidth=1.6,
+                        capsize=5,
+                        zorder=4,
+                        label=first,
+                    )
+            else:
+                ax.scatter(
+                    sample,
+                    spread,
+                    s=dot_size,
+                    color=colour,
+                    alpha=dot_alpha,
+                    linewidths=0,
+                    zorder=2,
+                )
+                ax.vlines(mean, left, right, color=colour, linewidth=2.2, zorder=3)
+                if sem:
+                    ax.errorbar(
+                        mean,
+                        centre,
+                        xerr=sem,
+                        fmt="none",
+                        ecolor=colour,
+                        elinewidth=1.6,
+                        capsize=5,
+                        zorder=4,
+                        label=first,
+                    )
+        elif orient == "v":
+            ax.bar(centre, mean, width=width, color=colour, alpha=0.85, zorder=1)
+            if sem:
+                ax.errorbar(
+                    centre,
+                    mean,
+                    yerr=sem,
+                    fmt="none",
+                    ecolor=PALETTE["ink"],
+                    elinewidth=1.4,
+                    capsize=5,
+                    zorder=3,
+                    label=first,
+                )
+            ax.scatter(
+                spread,
+                sample,
+                s=dot_size + 6,
+                color=PALETTE["ink"],
+                alpha=0.8,
+                linewidths=0,
+                zorder=4,
+            )
+        else:
+            ax.barh(centre, mean, height=width, color=colour, alpha=0.85, zorder=1)
+            if sem:
+                ax.errorbar(
+                    mean,
+                    centre,
+                    xerr=sem,
+                    fmt="none",
+                    ecolor=PALETTE["ink"],
+                    elinewidth=1.4,
+                    capsize=5,
+                    zorder=3,
+                    label=first,
+                )
+            ax.scatter(
+                sample,
+                spread,
+                s=dot_size + 6,
+                color=PALETTE["ink"],
+                alpha=0.8,
+                linewidths=0,
+                zorder=4,
+            )
+
+    return {"mean": means, "sem": sems, "n": counts}
 
 
 def reference_line(

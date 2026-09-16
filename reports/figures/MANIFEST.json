@@ -3,38 +3,38 @@
     "arms_comparison.png": {
       "axes": [
         {
-          "title": "",
+          "title": "ROC AUC",
           "x": "arm",
           "y": "ROC AUC"
         },
         {
-          "title": "",
+          "title": "PR AUC",
           "x": "arm",
           "y": "PR AUC"
         },
         {
-          "title": "",
+          "title": "recall, cancer class",
           "x": "arm",
           "y": "recall, cancer class"
         },
         {
-          "title": "",
+          "title": "F1, macro",
           "x": "arm",
           "y": "F1, macro"
         }
       ],
-      "dispersion": "±1 standard deviation across folds",
+      "dispersion": "one point per fold; rule: the mean; bar: ±1 standard error of the mean",
       "dpi": 200,
       "n": "n(evaluation images) = 99, n(folds) = 25",
-      "sha256": "9f5482dc1a6a00decd8eb99338ad4e663add9e1c554fd2075c6ae20f4bc59dac",
+      "sha256": "db77499f994a7bc03c777d4f2a205a5785e28697926c9ecedf023ee4d0a7b7a0",
       "source": "scripts/build_figures.py",
       "style_version": 1,
-      "written": "2026-09-15"
+      "written": "2026-09-16"
     },
     "calibration.png": {
       "axes": [
         {
-          "title": "",
+          "title": "Calibration, pooled out of fold",
           "x": "mean predicted probability, equal-population bins",
           "y": "observed cancer rate"
         }
@@ -45,7 +45,7 @@
       "sha256": "4b526dd85c57a612e5d994d1763e89933c03855d42909f3de3e35f2ed2b1d3ec",
       "source": "scripts/build_figures.py",
       "style_version": 1,
-      "written": "2026-09-15"
+      "written": "2026-09-16"
     },
     "dataset_composition.png": {
       "axes": [
@@ -82,91 +82,91 @@
     "label_efficiency.png": {
       "axes": [
         {
-          "title": "",
+          "title": "The task gets easier with labels, which answers nothing on its own",
           "x": "training labels per fold",
           "y": "ROC AUC"
         },
         {
-          "title": "",
+          "title": "And the answer: every interval spans zero",
           "x": "training labels per fold",
           "y": "semi-supervised minus\npermuted control"
         }
       ],
-      "dispersion": "top: ±1 SD across folds; bottom: 95 % bootstrap interval",
+      "dispersion": "top: band is ±1 standard error of the mean across folds; bottom: one point per fold, interval 95 % bootstrap on the mean difference",
       "dpi": 200,
       "n": "n(evaluation images) = 99, n(folds) = 25, n(budgets) = 4",
-      "sha256": "8cf241176a33e8d57da7619eb5c14464aa17b2d16ff4352484c4cbda148d1abc",
+      "sha256": "750d7ae102763d82d59a1c748af0db7249a452c13097a7dd6684e6360558724d",
       "source": "scripts/build_figures.py",
       "style_version": 1,
-      "written": "2026-09-15"
+      "written": "2026-09-16"
     },
     "leak_price.png": {
       "axes": [
         {
-          "title": "",
+          "title": "ROC AUC",
           "x": "difference in ROC AUC",
           "y": "arm"
         },
         {
-          "title": "",
+          "title": "recall, cancer class",
           "x": "difference in recall, cancer class",
           "y": "arm"
         }
       ],
-      "dispersion": "95 % bootstrap interval on the paired difference",
+      "dispersion": "one point per fold; interval: 95 % bootstrap on the mean difference",
       "dpi": 200,
       "n": "n(evaluation images) = 99, n(folds) = 25",
-      "sha256": "01533a47c50edc8c0d68789c1cd04a80f6b909ae3515999887159935e15e2b84",
+      "sha256": "6a2b69d98f1ecf71751f9c5e40b1840b09e778c27d83af1ebaf1f8f02d0faee6",
       "source": "scripts/build_figures.py",
       "style_version": 1,
-      "written": "2026-09-15"
+      "written": "2026-09-16"
     },
     "mechanisms.png": {
       "axes": [
         {
-          "title": "",
+          "title": "Two hypotheses about why the pseudo-labels do nothing",
           "x": "difference in ROC AUC, arm minus its own control",
           "y": "mechanism tested"
         }
       ],
-      "dispersion": "95 % bootstrap interval on the paired difference",
+      "dispersion": "one point per fold; interval: 95 % bootstrap on the mean difference",
       "dpi": 200,
       "n": "n(evaluation images) = 99, n(folds) = 25, n(comparisons) = 4",
-      "sha256": "6d2ae1000bc96f51f95cba4f116a60da8c72181da85693b88becb2d006549740",
+      "sha256": "bb5cb05d4221dc3721a51207cd215bbe711f8deb615ad3b3571b387b5b2f3d0a",
       "source": "scripts/build_figures.py",
       "style_version": 1,
-      "written": "2026-09-15"
+      "written": "2026-09-16"
     },
     "paired_differences.png": {
       "axes": [
         {
-          "title": "",
+          "title": "ROC AUC",
           "x": "difference in ROC AUC",
           "y": "pair compared"
         },
         {
-          "title": "",
+          "title": "PR AUC",
           "x": "difference in PR AUC",
           "y": "pair compared"
         },
         {
-          "title": "",
+          "title": "recall, cancer class",
           "x": "difference in recall, cancer class",
           "y": "pair compared"
         }
       ],
-      "dispersion": "95 % bootstrap interval on the paired difference",
+      "dispersion": "one point per fold; interval: 95 % bootstrap on the mean difference",
       "dpi": 200,
       "n": "n(evaluation images) = 99, n(folds) = 25",
-      "sha256": "e08fc500172274363d775f9021f19b5a55b8faca20ac9afd7cbf9751a94c795f",
+      "sha256": "9ac2ee3645f728289b2bfa5fff7915f04065166af4dc9db936ddd75bf9ecece3",
       "source": "scripts/build_figures.py",
       "style_version": 1,
-      "written": "2026-09-15"
+      "written": "2026-09-16"
     },
     "roc_arms.png": {
       "axes": [
         {
-          "title": "",
+          "title": "Pooled out-of-fold ROC, 25 folds",
           "x": "False positive rate",
           "y": "True positive rate"
         }
@@ -177,7 +177,7 @@
       "sha256": "4b71f9f32ea8e9a04306427881c1b4fe8f6ac7672e2186077bb3a2b4bb9f0698",
       "source": "scripts/build_figures.py",
       "style_version": 1,
-      "written": "2026-09-15"
+      "written": "2026-09-16"
     }
   },
   "schema": "image-manifest/1"
