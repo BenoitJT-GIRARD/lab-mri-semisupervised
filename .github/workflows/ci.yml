@@ -37,6 +37,17 @@ jobs:
       - name: Bandit
         run: uv run python -m bandit -c pyproject.toml -r src
 
+      # The unit tier forbids the network, and `build_classifier` asks torchvision for a
+      # pre-trained ResNet. A developer machine has those weights cached and never notices;
+      # a fresh runner would fetch them from inside a test and trip the guard. The cache is
+      # warmed here instead, where reaching the network is legitimate and visible.
+      - name: Warm the torchvision cache
+        run: |
+          uv run python - <<'EOF'
+          from torchvision import models
+          models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+          EOF
+
       # The suite runs on synthetic fixtures and tmp_path only: it never reads
       # data/, so it does not need the MRI images that are not in the repository.
       - name: Pytest
