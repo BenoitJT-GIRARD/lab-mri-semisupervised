@@ -15,6 +15,10 @@ it comes from, and each run folder carries the dataset fingerprint, the seeds, t
 versions and the git revision it was produced with. Reproducing it needs the archive of
 images, which is not ours to redistribute.
 
+**No diagnostic use is intended or supported.** The arms here answer a methodological
+question on a public research archive, and a clinical decision has no business resting on
+any number this repository publishes.
+
 ## The problem
 
 Labelling a brain MRI takes a radiologist. Unlabelled scans are comparatively free, so the
