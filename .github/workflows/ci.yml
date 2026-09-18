@@ -1,11 +1,10 @@
 name: CI
 
 # No `schedule` trigger. Nothing in this repository changes on its own.
+# Frozen on 2026-09-18. The workflows below ran green on the commit this repository
+# publishes, and the Actions tab holds that run. They fire by hand from now on: a
+# repository nobody maintains should not go red on a dependency that moved.
 on:
-  push:
-    branches: ["main", "feat/**"]
-  pull_request:
-    branches: ["main"]
   workflow_dispatch:
 
 jobs:

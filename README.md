@@ -59,7 +59,7 @@ split. Intervals are bootstrap over images, comparisons are paired across folds,
 corrects the families.
 
 Around the code: **uv** for a locked environment on two PyTorch indexes, **Ruff** and
-**Bandit** on every push, and **pytest** in three tiers whose system tier trains a real
+**Bandit** on each run, and **pytest** in three tiers whose system tier trains a real
 network end to end on a synthetic dataset.
 
 ## The result
