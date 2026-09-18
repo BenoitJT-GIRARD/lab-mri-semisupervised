@@ -45,12 +45,24 @@ n = 1 506 files. `scripts/build_manifest.py` writes these counts to
 <!-- source: ../reports/figures/MANIFEST.json -->
 ![What the duplicate rules do to the files the archive ships: the evaluation images and the pre-training pool, then the three categories set aside and why, n = 1 506 files](../reports/figures/dataset_composition.png)
 
+> **How to read it.** Every file the archive ships is placed once, in the band that says what
+> the inventory decided about it. Band width is the count of files, so the two bands feeding the
+> work sit beside the three that were set aside, each with the rule that excluded it. Files are
+> matched by the SHA-256 of their decoded pixels, which catches a duplicate that was saved again
+> under another name.
+
 A labelled image found in the pool leaves the **pool** and stays in the evaluation set:
 removing it from the evaluation would be choosing the test set after having looked at it.
 [`protocol.md`](protocol.md) carries the three rules in full, and what they cost.
 
 <!-- source: ../reports/figures/MANIFEST.json -->
 ![t-SNE of the ResNet50 embeddings, the two labelled classes in colour and the unlabelled pool in grey behind them, n = 1 506 files](../reports/figures/embedding_map.png)
+
+> **How to read it.** Each point is one scan, placed by t-SNE (t-distributed stochastic
+> neighbour embedding), which arranges high-dimensional vectors on a page so that scans the
+> network found similar land near each other. The axes carry no units and distances far apart
+> mean little; what the picture supports is the local grouping. The two labelled classes occupy
+> different regions and the grey pool spreads across both.
 
 The embeddings are what the clustering works in, and the projection above is what a reader
 can check without holding a single scan: the two classes sit in different regions, the pool

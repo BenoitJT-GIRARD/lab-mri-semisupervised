@@ -75,6 +75,13 @@ network end to end on a synthetic dataset.
 | `self_training_control` | self-training's images, labels shuffled | 0.948 | 0.069 | 99 | `corrected-stageb` |
 | `semi_supervised_confident` | only the pseudo-labels above a confidence cut | 0.945 | 0.058 | 99 | `corrected` |
 | `joint_permuted_control` | joint training on shuffled labels | 0.922 | 0.063 | 99 | `corrected-stageb` |
+
+> **How to read it.** One row per arm of the experiment, an arm being one recipe for using the
+> unlabelled scans. `mean fold ROC AUC` averages the twenty-five folds, each scored on the images
+> that fold held back; ROC AUC (area under the receiver operating characteristic curve) is the
+> chance the model ranks a cancer scan above a normal one. `SD across folds` is the standard
+> deviation of those twenty-five values, which is how far the answer travels when the same recipe
+> meets a different split.
 Each row is the mean of 25 fold values at 59 training labels, with their standard deviation
 beside it. What each column measures is in [`metrics.yaml`](metrics.yaml).
 
@@ -84,8 +91,20 @@ interval clears zero, and the ordering holds at every budget and under every var
 <!-- source: reports/figures/MANIFEST.json -->
 ![Paired differences between arms across the 25 shared folds, each with its 95 % bootstrap interval, on one shared scale centred on zero, n = 99 evaluation images](reports/figures/paired_differences.png)
 
+> **How to read it.** Three panels, one per metric, and every row is one comparison between two
+> arms. A dot is one of the twenty-five shared folds; the interval is a 95 % bootstrap on their
+> mean. The vertical zero line is what decides: an interval crossing it leaves the two arms of
+> that row indistinguishable on this dataset. Comparing fold by fold, and never through the
+> averages alone, removes the split itself as a source of difference.
+
 <!-- source: reports/figures/MANIFEST.json -->
 ![The same four arms as bars on four metrics, ROC AUC, PR AUC, recall on the cancer class and macro F1, with one standard deviation across the 25 folds, n = 99 evaluation images](reports/figures/arms_comparison.png)
+
+> **How to read it.** The same arms again, now on four metrics at once. PR AUC (area under the
+> precision-recall curve) and macro F1 answer what ROC AUC cannot: how clean the positive calls
+> stay, and how the two classes fare when each is weighted equally. Every panel draws one point
+> per fold behind its mean, so the overlap between arms is visible directly, and on all four it
+> is nearly total.
 
 The pooled out-of-fold ROC curves are in
 [`docs/protocol.md`](docs/protocol.md#two-quantities-called-roc-auc). They answer a different
@@ -97,6 +116,12 @@ are calibrated differently.
 
 <!-- source: reports/figures/MANIFEST.json -->
 ![Each mechanism arm against its own permuted control, at two label budgets, with 95 % bootstrap intervals and a zero line to read them against, n = 99 evaluation images](reports/figures/mechanisms.png)
+
+> **How to read it.** Two hypotheses about the pseudo-labels, each tested at two label budgets.
+> Every row sets an arm against its own control, which saw the same images with the labels
+> shuffled, so what survives is what the labels carried and never what extra images carried.
+> Dots are folds, the interval is a 95 % bootstrap, and only a row whose interval clears zero
+> supports a mechanism.
 
 <!-- source: reports/experiments/mechanisms.csv -->
 Against its own control, joint training wins clearly: **+0.033 [+0.009, +0.057], p = 0.008**
@@ -124,6 +149,12 @@ Which is why both readings are published.
 <!-- source: reports/figures/MANIFEST.json -->
 ![Label-efficiency curve: three arms at four label budgets, and below it the paired difference between the semi-supervised arm and its own control, n = 99 evaluation images at every budget](reports/figures/label_efficiency.png)
 
+> **How to read it.** The upper panel plots accuracy against the number of training labels, and
+> it climbs for every arm, which is the uninteresting part: more labels help whatever you do.
+> The lower panel carries the question, plotting the semi-supervised arm minus its own control
+> at each budget with a 95 % bootstrap interval. Each of those intervals contains zero, so no
+> budget is where the pseudo-labels begin to pay.
+
 <!-- source: reports/experiments/label_efficiency.csv -->
 | budget | mean fold ROC AUC | semi minus control | paired p | n |
 |---|---|---|---|---|
@@ -131,6 +162,11 @@ Which is why both readings are published.
 | 20 labels | 0.926 | +0.005 [−0.021, +0.034] | 0.71 | 99 |
 | 40 labels | 0.947 | +0.000 [−0.022, +0.025] | 0.97 | 99 |
 | 59 labels | 0.958 | +0.006 [−0.012, +0.029] | 0.57 | 99 |
+
+> **How to read it.** One row per label budget. The second column is the semi-supervised arm's
+> mean across folds, the third is its distance from its own control with the range that distance
+> plausibly occupies, and `paired p` is the chance of a gap this large if the two were equal. A
+> bracket containing zero and a p above 0.05 say the same thing twice.
 The first column is the semi-supervised arm; its baseline reads 0.941, 0.952, 0.957 and 0.966
 at the same four budgets. Intervals are 95 % bootstrap on the paired difference, over 25
 folds.
@@ -168,6 +204,12 @@ would have to annotate before the semi-supervised question even arises.
 
 <!-- source: reports/figures/MANIFEST.json -->
 ![Reliability curves per arm, observed cancer rate against mean predicted probability, with the Brier score and the calibration error in the legend, n = 99 evaluation images pooled out of fold](reports/figures/calibration.png)
+
+> **How to read it.** Scores are grouped into bins holding equal numbers of scans, and each bin
+> is drawn at the average probability it was promised against the fraction of it that was
+> cancer. Perfect agreement lies along the dashed diagonal. The legend carries two summaries per
+> arm: the Brier score, which punishes a confident wrong answer hardest, and the calibration
+> error, which is the mean vertical distance from that diagonal.
 
 **The probability scale is off, and by a lot.** Pooled out of fold, the supervised arm has a
 Brier score of 0.104 and an expected calibration error of 0.101, for a mean predicted score of
@@ -219,6 +261,11 @@ flowchart TB
 
 <!-- source: reports/figures/MANIFEST.json -->
 ![What the three leaks were worth: the paired difference between the leaking run and the corrected one, arm by arm, centred on zero, n = 99 evaluation images over 25 shared folds](reports/figures/leak_price.png)
+
+> **How to read it.** Two panels, one metric each, one row per arm. Each row is the leaking run
+> minus the corrected one over the same folds, so a dot sitting right of zero marks an arm the
+> leak flattered. The interval is a 95 % bootstrap on that mean difference. Both runs meet
+> identical splits, which is what makes the price of the defects a measurement.
 
 Because the same machinery produced a positive answer before. Three leaks and a confound,
 reproduced in `reports/experiments/legacy/` on identical folds, so their price is measured

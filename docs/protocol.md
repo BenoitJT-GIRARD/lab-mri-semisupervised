@@ -58,6 +58,12 @@ within one of them, never across.
 <!-- source: ../reports/figures/MANIFEST.json -->
 ![Pooled out-of-fold ROC curves, one per arm, with the area under each in the legend and the chance diagonal, n = 99 evaluation images](../reports/figures/roc_arms.png)
 
+> **How to read it.** One curve per arm, built from every out-of-fold score pooled into a single
+> ranking. The horizontal axis is the share of normal scans wrongly called cancer, the vertical
+> axis the share of cancers caught, and each point on a curve is one threshold. A curve bowing
+> towards the top-left corner separates the classes better; the diagonal is what guessing gives.
+> The legend prints the area under each curve.
+
 ## What the earlier version got wrong
 
 The same machinery produced a positive answer before. `reports/experiments/legacy/`
