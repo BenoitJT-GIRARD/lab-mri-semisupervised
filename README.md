@@ -193,6 +193,26 @@ checkpoint and threshold are chosen on an inner split that never overlaps the te
 [`docs/protocol.md`](docs/protocol.md) lists them with the nine tests that watch them,
 including the one that requires the old protocol to leak.
 
+```mermaid
+flowchart TB
+    POOL["99 evaluation images, 25 shared folds"]
+    POOL --> TRAIN
+    POOL -->|"opened once, at the end"| TEST["Test fold"]
+
+    subgraph TRAIN["Training fold: every decision is taken in here"]
+        direction LR
+        EMB["Frozen ResNet50<br/>embeddings"]
+        PICK["Four clusterings fitted,<br/>one chosen on the fold's own data"]
+        NET["ResNet18 pre-trained on pseudo-labels,<br/>fine-tuned on 59 real ones"]
+        INNER["Inner split picks the<br/>checkpoint and the threshold"]
+        EMB --> PICK --> NET --> INNER
+    end
+
+    TRAIN --> SCORE["One score for this fold"]
+    TEST --> SCORE
+    SCORE --> PAIRED["Read against its own control: same images, labels shuffled"]
+```
+
 <!-- source: reports/figures/MANIFEST.json -->
 ![What the three leaks were worth: the paired difference between the leaking run and the corrected one, arm by arm, centred on zero, n = 99 evaluation images over 25 shared folds](reports/figures/leak_price.png)
 
